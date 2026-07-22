@@ -1,0 +1,10 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Inter, sans-serif; background: #F5F7F8; color: #1E2A30; }
+
+.wl-input { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 8px; border: 1px solid #DCE3E6; font-family: Inter, sans-serif; font-size: 14px; background: #fff; }
+.wl-input:focus { outline: none; border-color: #2B6777; box-shadow: 0 0 0 3px rgba(43,103,119,0.12); }
+.wl-btn { font-family: Inter, sans-serif; font-weight: 600; font-size: 14px; border-radius: 8px; border: none; cursor: pointer; padding: 10px 16px; transition: opacity 0.15s; }
+.wl-btn:hover { opacity: 0.9; }
+.wl-btn:active { transform: scale(0.98); }
+.wl-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.wl-badge { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 600; }

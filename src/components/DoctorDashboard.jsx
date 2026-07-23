@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Search, User, Plus, X, FileText, AlertCircle } from "lucide-react";
+import { Search, User, Plus, X, FileText, AlertCircle, HeartPulse, FlaskConical } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import Header from "./Header";
 
@@ -8,6 +8,8 @@ export default function DoctorDashboard({ staff, onLogout }) {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [history, setHistory] = useState([]);
+  const [vitals, setVitals] = useState([]);
+  const [labResults, setLabResults] = useState([]);
   const [diagnosis, setDiagnosis] = useState("");
   const [notes, setNotes] = useState("");
   const [rx, setRx] = useState([{ key: 1, drug: "", dosage: "", instructions: "" }]);
@@ -28,6 +30,21 @@ export default function DoctorDashboard({ staff, onLogout }) {
       .eq("patient_id", patientId)
       .order("created_at", { ascending: false });
     setHistory(consultations || []);
+
+    const { data: vitalsData } = await supabase
+      .from("vitals")
+      .select("*")
+      .eq("patient_id", patientId)
+      .order("recorded_at", { ascending: false })
+      .limit(5);
+    setVitals(vitalsData || []);
+
+    const { data: labData } = await supabase
+      .from("lab_orders")
+      .select("*")
+      .eq("patient_id", patientId)
+      .order("ordered_at", { ascending: false });
+    setLabResults(labData || []);
   }
 
   function selectPatient(id) {
@@ -158,6 +175,56 @@ export default function DoctorDashboard({ staff, onLogout }) {
                   <div style={{ fontSize: 15, fontWeight: 600 }}>{selected.name}</div>
                   <div style={{ fontSize: 12, color: "#7C8A90" }}>{selected.gender} · DOB {selected.dob} · {selected.phone} · <span style={{ fontFamily: "IBM Plex Mono, monospace" }}>{selected.code}</span></div>
                 </div>
+              </div>
+
+              <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 18, marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <HeartPulse size={15} color="#C2467D" />
+                  <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 14, margin: 0 }}>Recent vitals</h3>
+                </div>
+                {vitals.length === 0 ? (
+                  <p style={{ fontSize: 12, color: "#7C8A90", margin: 0 }}>No vitals recorded for this patient yet.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {vitals.map((v) => (
+                      <div key={v.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "#5B6B72" }}>
+                        <span>
+                          {v.bp && <span style={{ marginRight: 10 }}>BP {v.bp}</span>}
+                          {v.temperature && <span style={{ marginRight: 10 }}>Temp {v.temperature}°C</span>}
+                          {v.pulse && <span style={{ marginRight: 10 }}>Pulse {v.pulse}</span>}
+                          {v.weight && <span>Weight {v.weight}kg</span>}
+                        </span>
+                        <span style={{ color: "#7C8A90" }}>{v.recorded_at?.slice(0, 10)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 18, marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <FlaskConical size={15} color="#C77D2E" />
+                  <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 14, margin: 0 }}>Lab results</h3>
+                </div>
+                {labResults.length === 0 ? (
+                  <p style={{ fontSize: 12, color: "#7C8A90", margin: 0 }}>No lab tests ordered for this patient yet.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {labResults.map((l) => (
+                      <div key={l.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "#5B6B72" }}>
+                        <span>
+                          <strong style={{ color: "#1E2A30" }}>{l.test_name}</strong>
+                          {l.status === "Completed" ? (
+                            <span style={{ marginLeft: 8 }}>— {l.result}</span>
+                          ) : (
+                            <span className="wl-badge" style={{ marginLeft: 8, background: "#C77D2E1A", color: "#C77D2E" }}>Pending</span>
+                          )}
+                        </span>
+                        <span style={{ color: "#7C8A90" }}>{l.ordered_at?.slice(0, 10)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 20, marginBottom: 16 }}>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Search, User, Plus, X, FileText, AlertCircle, HeartPulse, FlaskConical } from "lucide-react";
+import { Search, User, Plus, X, FileText, AlertCircle, HeartPulse, FlaskConical, BedDouble } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import Header from "./Header";
 
@@ -10,6 +10,9 @@ export default function DoctorDashboard({ staff, onLogout }) {
   const [history, setHistory] = useState([]);
   const [vitals, setVitals] = useState([]);
   const [labResults, setLabResults] = useState([]);
+  const [admission, setAdmission] = useState(null);
+  const [admittedIds, setAdmittedIds] = useState(new Set());
+  const [admitReason, setAdmitReason] = useState("");
   const [diagnosis, setDiagnosis] = useState("");
   const [notes, setNotes] = useState("");
   const [rx, setRx] = useState([{ key: 1, drug: "", dosage: "", instructions: "" }]);
@@ -19,7 +22,13 @@ export default function DoctorDashboard({ staff, onLogout }) {
 
   useEffect(() => {
     supabase.from("patients").select("*").order("name").then(({ data }) => setPatients(data || []));
+    loadAdmittedIds();
   }, []);
+
+  async function loadAdmittedIds() {
+    const { data } = await supabase.from("admissions").select("patient_id").eq("status", "Admitted");
+    setAdmittedIds(new Set((data || []).map((a) => a.patient_id)));
+  }
 
   const selected = patients.find((p) => p.id === selectedId) || null;
 
@@ -45,6 +54,42 @@ export default function DoctorDashboard({ staff, onLogout }) {
       .eq("patient_id", patientId)
       .order("ordered_at", { ascending: false });
     setLabResults(labData || []);
+
+    const { data: admissionData } = await supabase
+      .from("admissions")
+      .select("*")
+      .eq("patient_id", patientId)
+      .eq("status", "Admitted")
+      .order("admitted_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    setAdmission(admissionData || null);
+  }
+
+  async function admitPatient() {
+    if (!selected) return;
+    const { error } = await supabase.from("admissions").insert({
+      patient_id: selected.id,
+      admitted_by: staff.id,
+      reason: admitReason.trim(),
+    });
+    if (!error) {
+      setAdmitReason("");
+      loadHistory(selected.id);
+      loadAdmittedIds();
+    }
+  }
+
+  async function dischargePatient() {
+    if (!admission) return;
+    const { error } = await supabase
+      .from("admissions")
+      .update({ status: "Discharged", discharged_at: new Date().toISOString(), discharged_by: staff.id })
+      .eq("id", admission.id);
+    if (!error) {
+      loadHistory(selected.id);
+      loadAdmittedIds();
+    }
   }
 
   function selectPatient(id) {
@@ -154,6 +199,11 @@ export default function DoctorDashboard({ staff, onLogout }) {
                 >
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</div>
                   <div style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#7C8A90" }}>{p.code}</div>
+                  {admittedIds.has(p.id) && (
+                    <span className="wl-badge" style={{ marginTop: 4, background: "#A13D3D1A", color: "#A13D3D", fontSize: 10 }}>
+                      <BedDouble size={11} /> Admitted
+                    </span>
+                  )}
                 </div>
               ))
             )}
@@ -175,6 +225,31 @@ export default function DoctorDashboard({ staff, onLogout }) {
                   <div style={{ fontSize: 15, fontWeight: 600 }}>{selected.name}</div>
                   <div style={{ fontSize: 12, color: "#7C8A90" }}>{selected.gender} · DOB {selected.dob} · {selected.phone} · <span style={{ fontFamily: "IBM Plex Mono, monospace" }}>{selected.code}</span></div>
                 </div>
+              </div>
+
+              <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 18, marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                  <BedDouble size={15} color="#A13D3D" />
+                  <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 14, margin: 0 }}>Ward status</h3>
+                </div>
+                {admission ? (
+                  <div>
+                    <p style={{ fontSize: 12, color: "#5B6B72", margin: "0 0 10px" }}>
+                      Admitted since <strong>{admission.admitted_at?.slice(0, 10)}</strong>
+                      {admission.reason && <> — {admission.reason}</>}
+                    </p>
+                    <button className="wl-btn" onClick={dischargePatient} style={{ background: "#2F7D4F", color: "#fff" }}>
+                      Discharge patient
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input className="wl-input" value={admitReason} onChange={(e) => setAdmitReason(e.target.value)} placeholder="Reason for admission (optional)" />
+                    <button className="wl-btn" onClick={admitPatient} style={{ background: "#A13D3D", color: "#fff", whiteSpace: "nowrap" }}>
+                      Admit to ward
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 18, marginBottom: 16 }}>

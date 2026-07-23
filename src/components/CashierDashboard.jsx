@@ -4,6 +4,7 @@ import Header from "./Header";
 
 export default function CashierDashboard({ staff, onLogout }) {
   const [consultations, setConsultations] = useState([]);
+  const [admissions, setAdmissions] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [priceList, setPriceList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -12,12 +13,14 @@ export default function CashierDashboard({ staff, onLogout }) {
 
   async function loadData() {
     setLoading(true);
-    const [{ data: c }, { data: inv }, { data: prices }] = await Promise.all([
+    const [{ data: c }, { data: adm }, { data: inv }, { data: prices }] = await Promise.all([
       supabase.from("consultations").select("*, patients(name, code), prescriptions(*)").order("created_at", { ascending: false }),
+      supabase.from("admissions").select("*, patients(name, code)").eq("status", "Discharged").order("discharged_at", { ascending: false }),
       supabase.from("invoices").select("*, patients(name)").order("created_at", { ascending: false }),
       supabase.from("price_list").select("*").eq("active", true).order("category").order("name"),
     ]);
     setConsultations(c || []);
+    setAdmissions(adm || []);
     setInvoices(inv || []);
     setPriceList(prices || []);
     setLoading(false);
@@ -27,16 +30,32 @@ export default function CashierDashboard({ staff, onLogout }) {
     loadData();
   }, []);
 
-  const invoicedConsultIds = new Set(invoices.map((inv) => inv.consultation_id));
+  const invoicedConsultIds = new Set(invoices.map((inv) => inv.consultation_id).filter(Boolean));
+  const invoicedAdmissionIds = new Set(invoices.map((inv) => inv.admission_id).filter(Boolean));
   const awaitingBilling = consultations.filter((c) => !invoicedConsultIds.has(c.id));
+  const awaitingStayBilling = admissions.filter((a) => !invoicedAdmissionIds.has(a.id));
+
+  function daysAdmitted(a) {
+    const ms = new Date(a.discharged_at) - new Date(a.admitted_at);
+    return Math.max(1, Math.ceil(ms / (1000 * 60 * 60 * 24)));
+  }
 
   function startBilling(c) {
-    setBilling(c);
+    setBilling({ type: "visit", data: c });
     const initialLines = [
       { key: "consult", label: "Consultation fee", priceItemId: "", quantity: 1, amount: 0 },
       ...c.prescriptions.map((p, idx) => ({ key: `rx-${idx}`, label: p.drug, priceItemId: "", quantity: 1, amount: 0 })),
     ];
     setLines(initialLines);
+  }
+
+  function startStayBilling(a) {
+    setBilling({ type: "stay", data: a });
+    setLines([{ key: "room", label: `Room charge (${daysAdmitted(a)} day${daysAdmitted(a) > 1 ? "s" : ""})`, priceItemId: "", quantity: daysAdmitted(a), amount: 0 }]);
+  }
+
+  function addExtraLine() {
+    setLines([...lines, { key: `extra-${Date.now()}`, label: "Additional item", priceItemId: "", quantity: 1, amount: 0 }]);
   }
 
   function updateLine(key, field, value) {
@@ -63,16 +82,15 @@ export default function CashierDashboard({ staff, onLogout }) {
     e.preventDefault();
     if (!billing) return;
 
-    const { data: invoice, error } = await supabase
-      .from("invoices")
-      .insert({
-        patient_id: billing.patient_id,
-        consultation_id: billing.id,
-        total,
-        created_by: staff.id,
-      })
-      .select()
-      .single();
+    const patientId = billing.type === "visit" ? billing.data.patient_id : billing.data.patient_id;
+    const insertPayload = {
+      patient_id: patientId,
+      total,
+      created_by: staff.id,
+      ...(billing.type === "visit" ? { consultation_id: billing.data.id } : { admission_id: billing.data.id }),
+    };
+
+    const { data: invoice, error } = await supabase.from("invoices").insert(insertPayload).select().single();
 
     if (error) return;
 
@@ -130,10 +148,29 @@ export default function CashierDashboard({ staff, onLogout }) {
               )}
             </div>
 
+            <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 15, margin: "0 0 10px" }}>
+              Stays awaiting billing <span style={{ color: "#7C8A90", fontWeight: 500 }}>({awaitingStayBilling.length})</span>
+            </h3>
+            <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, overflow: "hidden", marginBottom: 24 }}>
+              {awaitingStayBilling.length === 0 ? (
+                <div style={{ padding: 24, textAlign: "center", color: "#7C8A90", fontSize: 13 }}>No discharged stays waiting to be billed.</div>
+              ) : (
+                awaitingStayBilling.map((a, i) => (
+                  <div key={a.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: i < awaitingStayBilling.length - 1 ? "1px solid #EEF1F2" : "none" }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{a.patients?.name} <span style={{ color: "#7C8A90", fontWeight: 400 }}>· {daysAdmitted(a)} day{daysAdmitted(a) > 1 ? "s" : ""} admitted</span></div>
+                      <div style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#7C8A90" }}>{a.code} · {a.admitted_at?.slice(0, 10)} → {a.discharged_at?.slice(0, 10)}</div>
+                    </div>
+                    <button className="wl-btn" onClick={() => startStayBilling(a)} style={{ background: "#A13D3D", color: "#fff" }}>Bill this stay</button>
+                  </div>
+                ))
+              )}
+            </div>
+
             {billing && (
               <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 20, marginBottom: 24 }}>
                 <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 15, margin: "0 0 14px" }}>
-                  Invoice for {billing.patients?.name}
+                  {billing.type === "visit" ? "Invoice for " + billing.data.patients?.name : "Ward stay invoice for " + billing.data.patients?.name}
                 </h3>
                 <form onSubmit={createInvoice}>
                   {lines.map((l) => (
@@ -156,6 +193,10 @@ export default function CashierDashboard({ staff, onLogout }) {
                       </div>
                     </div>
                   ))}
+
+                  <button type="button" className="wl-btn" onClick={addExtraLine} style={{ background: "#F5F7F8", color: "#5B6B72", marginTop: 10 }}>
+                    + Add another item
+                  </button>
 
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0 4px" }}>
                     <span style={{ fontSize: 14, fontWeight: 600 }}>Total</span>

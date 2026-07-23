@@ -3,12 +3,14 @@ import { Plus, Trash2, AlertCircle } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { ROLES, roleMeta } from "../constants";
 import Header from "./Header";
+import PriceListManager from "./PriceListManager";
 
 // NOTE: your Edge Function may be named "create-staff" or "quick-handler"
 // depending on what you named it when deploying. Update this if needed.
 const CREATE_STAFF_FUNCTION = "quick-handler";
 
 export default function AdminDashboard({ staff, onLogout }) {
+  const [tab, setTab] = useState("staff");
   const [staffList, setStaffList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ name: "", username: "", password: "", role: "Receptionist" });
@@ -61,6 +63,31 @@ export default function AdminDashboard({ staff, onLogout }) {
     <div>
       <Header staff={staff} onLogout={onLogout} />
       <div style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+          <button
+            className="wl-btn"
+            onClick={() => setTab("staff")}
+            style={{ background: tab === "staff" ? "#2B6777" : "#F5F7F8", color: tab === "staff" ? "#fff" : "#5B6B72" }}
+          >
+            Staff accounts
+          </button>
+          <button
+            className="wl-btn"
+            onClick={() => setTab("price")}
+            style={{ background: tab === "price" ? "#2B6777" : "#F5F7F8", color: tab === "price" ? "#fff" : "#5B6B72" }}
+          >
+            Price list
+          </button>
+        </div>
+
+        {tab === "price" ? (
+          <>
+            <h2 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 18, margin: "0 0 4px" }}>Price list</h2>
+            <p style={{ color: "#5B6B72", fontSize: 13, margin: "0 0 24px" }}>Manage what the Cashier can bill for — consultations, medications, lab tests, and procedures.</p>
+            <PriceListManager />
+          </>
+        ) : (
+        <>
         <h2 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 18, margin: "0 0 4px" }}>Staff accounts</h2>
         <p style={{ color: "#5B6B72", fontSize: 13, margin: "0 0 24px" }}>Create logins for each department. Staff sign in with the username and password you set here.</p>
 
@@ -122,6 +149,8 @@ export default function AdminDashboard({ staff, onLogout }) {
             })
           )}
         </div>
+        </>
+        )}
       </div>
     </div>
   );

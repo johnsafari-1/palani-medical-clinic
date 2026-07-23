@@ -5,19 +5,21 @@ import Header from "./Header";
 export default function CashierDashboard({ staff, onLogout }) {
   const [consultations, setConsultations] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [priceList, setPriceList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [billing, setBilling] = useState(null);
-  const [consultFee, setConsultFee] = useState("500");
-  const [drugPrices, setDrugPrices] = useState({});
+  const [lines, setLines] = useState([]);
 
   async function loadData() {
     setLoading(true);
-    const [{ data: c }, { data: inv }] = await Promise.all([
+    const [{ data: c }, { data: inv }, { data: prices }] = await Promise.all([
       supabase.from("consultations").select("*, patients(name, code), prescriptions(*)").order("created_at", { ascending: false }),
       supabase.from("invoices").select("*, patients(name)").order("created_at", { ascending: false }),
+      supabase.from("price_list").select("*").eq("active", true).order("category").order("name"),
     ]);
     setConsultations(c || []);
     setInvoices(inv || []);
+    setPriceList(prices || []);
     setLoading(false);
   }
 
@@ -30,15 +32,32 @@ export default function CashierDashboard({ staff, onLogout }) {
 
   function startBilling(c) {
     setBilling(c);
-    setConsultFee("500");
-    const prices = {};
-    c.prescriptions.forEach((p, idx) => (prices[idx] = "0"));
-    setDrugPrices(prices);
+    const initialLines = [
+      { key: "consult", label: "Consultation fee", priceItemId: "", quantity: 1, amount: 0 },
+      ...c.prescriptions.map((p, idx) => ({ key: `rx-${idx}`, label: p.drug, priceItemId: "", quantity: 1, amount: 0 })),
+    ];
+    setLines(initialLines);
   }
 
-  const total = billing
-    ? (parseFloat(consultFee) || 0) + billing.prescriptions.reduce((sum, _, idx) => sum + (parseFloat(drugPrices[idx]) || 0), 0)
-    : 0;
+  function updateLine(key, field, value) {
+    setLines(
+      lines.map((l) => {
+        if (l.key !== key) return l;
+        const next = { ...l, [field]: value };
+        if (field === "priceItemId") {
+          const item = priceList.find((p) => p.id === value);
+          next.amount = item ? item.price * next.quantity : 0;
+        }
+        if (field === "quantity") {
+          const item = priceList.find((p) => p.id === next.priceItemId);
+          next.amount = item ? item.price * (parseFloat(value) || 0) : next.amount;
+        }
+        return next;
+      })
+    );
+  }
+
+  const total = lines.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
 
   async function createInvoice(e) {
     e.preventDefault();
@@ -57,13 +76,22 @@ export default function CashierDashboard({ staff, onLogout }) {
 
     if (error) return;
 
-    const items = [
-      { invoice_id: invoice.id, label: "Consultation fee", amount: parseFloat(consultFee) || 0 },
-      ...billing.prescriptions.map((p, idx) => ({ invoice_id: invoice.id, label: p.drug, amount: parseFloat(drugPrices[idx]) || 0 })),
-    ];
-    await supabase.from("invoice_items").insert(items);
+    const items = lines
+      .filter((l) => l.priceItemId)
+      .map((l) => {
+        const item = priceList.find((p) => p.id === l.priceItemId);
+        return {
+          invoice_id: invoice.id,
+          label: item ? item.name : l.label,
+          quantity: l.quantity,
+          unit_price: item ? item.price : null,
+          amount: l.amount,
+        };
+      });
+    if (items.length) await supabase.from("invoice_items").insert(items);
 
     setBilling(null);
+    setLines([]);
     loadData();
   }
 
@@ -108,23 +136,34 @@ export default function CashierDashboard({ staff, onLogout }) {
                   Invoice for {billing.patients?.name}
                 </h3>
                 <form onSubmit={createInvoice}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #EEF1F2" }}>
-                    <span style={{ fontSize: 13 }}>Consultation fee</span>
-                    <input className="wl-input" type="number" value={consultFee} onChange={(e) => setConsultFee(e.target.value)} style={{ width: 100 }} />
-                  </div>
-                  {billing.prescriptions.map((p, idx) => (
-                    <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #EEF1F2" }}>
-                      <span style={{ fontSize: 13 }}>{p.drug}</span>
-                      <input className="wl-input" type="number" value={drugPrices[idx] || "0"} onChange={(e) => setDrugPrices({ ...drugPrices, [idx]: e.target.value })} style={{ width: 100 }} />
+                  {lines.map((l) => (
+                    <div key={l.key} style={{ display: "grid", gridTemplateColumns: "1.4fr 0.7fr 0.7fr", gap: 10, alignItems: "end", padding: "8px 0", borderBottom: "1px solid #EEF1F2" }}>
+                      <div>
+                        <label style={{ fontSize: 11, color: "#7C8A90", display: "block", marginBottom: 2 }}>{l.label}</label>
+                        <select className="wl-input" value={l.priceItemId} onChange={(e) => updateLine(l.key, "priceItemId", e.target.value)}>
+                          <option value="">Select price list item…</option>
+                          {priceList.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name} — KES {Number(p.price).toLocaleString()}/{p.unit}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: "#7C8A90", display: "block", marginBottom: 2 }}>Qty</label>
+                        <input className="wl-input" type="number" min="1" value={l.quantity} onChange={(e) => updateLine(l.key, "quantity", e.target.value)} />
+                      </div>
+                      <div style={{ textAlign: "right", fontSize: 13, fontWeight: 600, fontFamily: "IBM Plex Mono, monospace" }}>
+                        KES {Number(l.amount).toLocaleString()}
+                      </div>
                     </div>
                   ))}
+
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 0 4px" }}>
                     <span style={{ fontSize: 14, fontWeight: 600 }}>Total</span>
                     <span style={{ fontSize: 16, fontWeight: 600, fontFamily: "IBM Plex Mono, monospace" }}>KES {total.toLocaleString()}</span>
                   </div>
                   <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
                     <button className="wl-btn" type="submit" style={{ background: "#2B6777", color: "#fff" }}>Create invoice</button>
-                    <button className="wl-btn" type="button" onClick={() => setBilling(null)} style={{ background: "#F5F7F8", color: "#5B6B72" }}>Cancel</button>
+                    <button className="wl-btn" type="button" onClick={() => { setBilling(null); setLines([]); }} style={{ background: "#F5F7F8", color: "#5B6B72" }}>Cancel</button>
                   </div>
                 </form>
               </div>

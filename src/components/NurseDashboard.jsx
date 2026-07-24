@@ -108,7 +108,7 @@ export default function NurseDashboard({ staff, onLogout }) {
               Select a patient to log vitals.
             </div>
           ) : (
-            <div>
+            <div key={selected.id} className="wl-fade-in">
               <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 18, marginBottom: 16, display: "flex", alignItems: "center", gap: 14 }}>
                 <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#C2467D1A", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <User size={18} color="#C2467D" />

@@ -65,14 +65,14 @@ export default function AdminDashboard({ staff, onLogout }) {
       <div style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
           <button
-            className="wl-btn"
+            className="wl-btn wl-tab"
             onClick={() => setTab("staff")}
             style={{ background: tab === "staff" ? "#2B6777" : "#F5F7F8", color: tab === "staff" ? "#fff" : "#5B6B72" }}
           >
             Staff accounts
           </button>
           <button
-            className="wl-btn"
+            className="wl-btn wl-tab"
             onClick={() => setTab("price")}
             style={{ background: tab === "price" ? "#2B6777" : "#F5F7F8", color: tab === "price" ? "#fff" : "#5B6B72" }}
           >
@@ -140,7 +140,7 @@ export default function AdminDashboard({ staff, onLogout }) {
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{u.name}</div>
                   </div>
                   {u.role !== "Admin" && (
-                    <button className="wl-btn" onClick={() => removeStaff(u.id)} style={{ background: "transparent", color: "#A13D3D", padding: 6 }} aria-label="Remove staff">
+                    <button className="wl-btn icon-btn danger" onClick={() => removeStaff(u.id)} style={{ color: "#A13D3D" }} aria-label="Remove staff" title="Remove staff account">
                       <Trash2 size={15} />
                     </button>
                   )}

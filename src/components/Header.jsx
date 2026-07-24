@@ -11,7 +11,7 @@ export default function Header({ staff, onLogout }) {
         <span style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 18 }}>Palani Medical Clinic</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <span className="wl-badge" style={{ background: meta.color + "1A", color: meta.color }}>
+        <span className="wl-badge" title={`Signed in as ${meta.label}`} style={{ background: meta.color + "1A", color: meta.color, cursor: "default" }}>
           <Icon size={14} /> {meta.label}
         </span>
         <div style={{ textAlign: "right" }}>

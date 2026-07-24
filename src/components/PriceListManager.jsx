@@ -112,7 +112,7 @@ export default function PriceListManager() {
                       <button className="wl-btn" onClick={() => toggleActive(item)} style={{ background: "#F5F7F8", color: "#5B6B72", fontSize: 12, padding: "6px 10px" }}>
                         {item.active ? "Deactivate" : "Activate"}
                       </button>
-                      <button className="wl-btn" onClick={() => removeItem(item.id)} style={{ background: "transparent", color: "#A13D3D", padding: 6 }} aria-label="Delete item">
+                      <button className="wl-btn icon-btn danger" onClick={() => removeItem(item.id)} style={{ color: "#A13D3D" }} aria-label="Delete item" title="Delete this price list item">
                         <Trash2 size={15} />
                       </button>
                     </div>

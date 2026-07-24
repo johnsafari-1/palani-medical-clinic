@@ -216,7 +216,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
               Select a patient from the list to start a consultation.
             </div>
           ) : (
-            <div>
+            <div key={selected.id} className="wl-fade-in">
               <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 18, marginBottom: 16, display: "flex", alignItems: "center", gap: 14 }}>
                 <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#2F7D4F1A", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <User size={18} color="#2F7D4F" />
@@ -317,7 +317,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
                       <input className="wl-input" value={r.drug} onChange={(e) => updateRxRow(r.key, "drug", e.target.value)} placeholder="Drug name" />
                       <input className="wl-input" value={r.dosage} onChange={(e) => updateRxRow(r.key, "dosage", e.target.value)} placeholder="Dosage" />
                       <input className="wl-input" value={r.instructions} onChange={(e) => updateRxRow(r.key, "instructions", e.target.value)} placeholder="Frequency / duration" />
-                      <button type="button" className="wl-btn" onClick={() => removeRxRow(r.key)} style={{ background: "transparent", color: "#A13D3D", padding: 6 }} aria-label="Remove drug row">
+                      <button type="button" className="wl-btn icon-btn danger" onClick={() => removeRxRow(r.key)} style={{ color: "#A13D3D" }} aria-label="Remove drug row" title="Remove this drug">
                         <X size={15} />
                       </button>
                     </div>

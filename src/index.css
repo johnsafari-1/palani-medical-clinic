@@ -1,10 +1,98 @@
 * { box-sizing: border-box; }
 body { margin: 0; font-family: Inter, sans-serif; background: #F5F7F8; color: #1E2A30; }
 
-.wl-input { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 8px; border: 1px solid #DCE3E6; font-family: Inter, sans-serif; font-size: 14px; background: #fff; }
+/* ---------- Inputs ---------- */
+.wl-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #DCE3E6;
+  font-family: Inter, sans-serif;
+  font-size: 14px;
+  background: #fff;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.wl-input:hover { border-color: #B7C4C9; }
 .wl-input:focus { outline: none; border-color: #2B6777; box-shadow: 0 0 0 3px rgba(43,103,119,0.12); }
-.wl-btn { font-family: Inter, sans-serif; font-weight: 600; font-size: 14px; border-radius: 8px; border: none; cursor: pointer; padding: 10px 16px; transition: opacity 0.15s; }
-.wl-btn:hover { opacity: 0.9; }
-.wl-btn:active { transform: scale(0.98); }
-.wl-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.wl-badge { display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 600; }
+
+/* ---------- Buttons ---------- */
+.wl-btn {
+  font-family: Inter, sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  padding: 10px 16px;
+  transition: transform 0.12s ease, box-shadow 0.15s ease, opacity 0.15s ease, background-color 0.15s ease;
+}
+.wl-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(30, 42, 48, 0.12); opacity: 0.95; }
+.wl-btn:active { transform: translateY(0) scale(0.98); box-shadow: none; }
+.wl-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+.wl-btn:focus-visible { outline: 2px solid #2B6777; outline-offset: 2px; }
+
+/* ---------- Badges ---------- */
+.wl-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: transform 0.12s ease;
+}
+
+/* ---------- Icon-only buttons (trash, remove-row, etc.) ---------- */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.12s ease;
+}
+.icon-btn:hover { background: rgba(30, 42, 48, 0.06); transform: scale(1.08); }
+.icon-btn:active { transform: scale(0.95); }
+.icon-btn.danger:hover { background: rgba(161, 61, 61, 0.12); }
+
+/* ---------- Cards / rows that respond to hover ---------- */
+.wl-card {
+  background: #fff;
+  border: 1px solid #DCE3E6;
+  border-radius: 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.wl-card:hover { box-shadow: 0 4px 16px rgba(30, 42, 48, 0.06); }
+
+.wl-row {
+  transition: background-color 0.15s ease;
+}
+.wl-row:hover { background: #FAFBFC; }
+
+/* ---------- Role directory cards on the login screen ---------- */
+.wl-role-card {
+  cursor: default;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+.wl-role-card:hover { transform: translateY(-2px); background: #2E3D45; }
+.wl-role-card:hover .wl-role-icon { transform: scale(1.15) rotate(-4deg); }
+.wl-role-icon { display: inline-flex; transition: transform 0.2s ease; }
+
+/* ---------- Simple fade-in for content that appears (selected patient panels, etc.) ---------- */
+@keyframes wl-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.wl-fade-in { animation: wl-fade-in 0.2s ease; }
+
+/* ---------- Tab buttons ---------- */
+.wl-tab {
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+.wl-tab:hover { transform: translateY(-1px); }

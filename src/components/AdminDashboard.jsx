@@ -4,6 +4,7 @@ import { supabase } from "../supabaseClient";
 import { ROLES, roleMeta } from "../constants";
 import Header from "./Header";
 import PriceListManager from "./PriceListManager";
+import ReportsPanel from "./ReportsPanel";
 
 // NOTE: your Edge Function may be named "create-staff" or "quick-handler"
 // depending on what you named it when deploying. Update this if needed.
@@ -117,9 +118,22 @@ export default function AdminDashboard({ staff, onLogout }) {
           >
             Price list
           </button>
+          <button
+            className="wl-btn wl-tab"
+            onClick={() => setTab("reports")}
+            style={{ background: tab === "reports" ? "#2B6777" : "#F5F7F8", color: tab === "reports" ? "#fff" : "#5B6B72" }}
+          >
+            Reports
+          </button>
         </div>
 
-        {tab === "price" ? (
+        {tab === "reports" ? (
+          <>
+            <h2 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 18, margin: "0 0 4px" }}>Reports</h2>
+            <p style={{ color: "#5B6B72", fontSize: 13, margin: "0 0 24px" }}>A snapshot of how the clinic is running right now.</p>
+            <ReportsPanel />
+          </>
+        ) : tab === "price" ? (
           <>
             <h2 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 18, margin: "0 0 4px" }}>Price list</h2>
             <p style={{ color: "#5B6B72", fontSize: 13, margin: "0 0 24px" }}>Manage what the Cashier can bill for — consultations, medications, lab tests, and procedures.</p>

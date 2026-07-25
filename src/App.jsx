@@ -35,6 +35,9 @@ export default function App() {
         .single();
       if (error) {
         setStaffError("Signed in, but no staff profile found for this account. Ask an Admin to add you.");
+      } else if (data.active === false) {
+        setStaffError("This account has been deactivated. Contact your Admin.");
+        await supabase.auth.signOut();
       } else {
         setStaff(data);
         setStaffError("");
@@ -54,7 +57,7 @@ export default function App() {
     );
   }
 
-  if (!session) {
+  if (!session && !staffError) {
     return <LoginScreen />;
   }
 
@@ -62,7 +65,7 @@ export default function App() {
     return (
       <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "Inter, sans-serif", gap: 16 }}>
         <p style={{ color: "#A13D3D" }}>{staffError}</p>
-        <button className="wl-btn" onClick={handleLogout} style={{ background: "#2B6777", color: "#fff" }}>Sign out</button>
+        <button className="wl-btn" onClick={() => { setStaffError(""); handleLogout(); }} style={{ background: "#2B6777", color: "#fff" }}>Back to sign in</button>
       </div>
     );
   }

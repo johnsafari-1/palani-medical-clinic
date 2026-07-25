@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, AlertCircle } from "lucide-react";
+import { Plus, Trash2, AlertCircle, KeyRound, Ban, RotateCcw, Check, X } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { ROLES, roleMeta } from "../constants";
 import Header from "./Header";
@@ -7,7 +7,7 @@ import PriceListManager from "./PriceListManager";
 
 // NOTE: your Edge Function may be named "create-staff" or "quick-handler"
 // depending on what you named it when deploying. Update this if needed.
-const CREATE_STAFF_FUNCTION = "quick-handler";
+const STAFF_FUNCTION = "quick-handler";
 
 export default function AdminDashboard({ staff, onLogout }) {
   const [tab, setTab] = useState("staff");
@@ -16,6 +16,10 @@ export default function AdminDashboard({ staff, onLogout }) {
   const [form, setForm] = useState({ name: "", username: "", password: "", role: "Receptionist" });
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [busyId, setBusyId] = useState(null);
+  const [resetId, setResetId] = useState(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [actionError, setActionError] = useState("");
 
   async function loadStaff() {
     setLoading(true);
@@ -28,6 +32,14 @@ export default function AdminDashboard({ staff, onLogout }) {
     loadStaff();
   }, []);
 
+  async function callStaffFunction(action, payload) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    return supabase.functions.invoke(STAFF_FUNCTION, {
+      body: { action, ...payload },
+      headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
+    });
+  }
+
   async function addStaff(e) {
     e.preventDefault();
     setFormError("");
@@ -36,10 +48,11 @@ export default function AdminDashboard({ staff, onLogout }) {
       return;
     }
     setSubmitting(true);
-    const { data: sessionData } = await supabase.auth.getSession();
-    const { data, error } = await supabase.functions.invoke(CREATE_STAFF_FUNCTION, {
-      body: { name: form.name.trim(), username: form.username.trim(), password: form.password, role: form.role },
-      headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
+    const { data, error } = await callStaffFunction("create", {
+      name: form.name.trim(),
+      username: form.username.trim(),
+      password: form.password,
+      role: form.role,
     });
     setSubmitting(false);
     if (error || data?.error) {
@@ -50,11 +63,37 @@ export default function AdminDashboard({ staff, onLogout }) {
     loadStaff();
   }
 
+  async function toggleActive(u) {
+    setActionError("");
+    setBusyId(u.id);
+    const { data, error } = await callStaffFunction(u.active ? "deactivate" : "reactivate", { staffId: u.id });
+    setBusyId(null);
+    if (error || data?.error) {
+      setActionError(data?.error || error.message || "Could not update this account.");
+      return;
+    }
+    loadStaff();
+  }
+
+  async function submitPasswordReset(u) {
+    if (!newPassword.trim()) return;
+    setActionError("");
+    setBusyId(u.id);
+    const { data, error } = await callStaffFunction("reset_password", { staffId: u.id, newPassword: newPassword.trim() });
+    setBusyId(null);
+    if (error || data?.error) {
+      setActionError(data?.error || error.message || "Could not reset password.");
+      return;
+    }
+    setResetId(null);
+    setNewPassword("");
+  }
+
   async function removeStaff(id) {
-    // Note: this only removes the staff row. Deleting the login itself
-    // requires an admin API call — for now this revokes their access to data
-    // but the login technically still exists. A follow-up Edge Function can
-    // handle full deletion if you need it later.
+    // This only removes the app-level staff row (their dashboard access
+    // and data association). Their login itself is handled separately —
+    // deactivate it first using the button above if you want to fully
+    // block sign-in, since this alone does not delete their credentials.
     await supabase.from("staff").delete().eq("id", id);
     loadStaff();
   }
@@ -124,6 +163,12 @@ export default function AdminDashboard({ staff, onLogout }) {
           )}
         </div>
 
+        {actionError && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#A13D3D", fontSize: 12, marginBottom: 10 }}>
+            <AlertCircle size={14} /> {actionError}
+          </div>
+        )}
+
         <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, overflow: "hidden" }}>
           {loading ? (
             <div style={{ padding: 24, textAlign: "center", color: "#7C8A90", fontSize: 13 }}>Loading staff…</div>
@@ -132,17 +177,59 @@ export default function AdminDashboard({ staff, onLogout }) {
               const meta = roleMeta(u.role);
               const Icon = meta.icon;
               return (
-                <div key={u.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: i < staffList.length - 1 ? "1px solid #EEF1F2" : "none" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <span className="wl-badge" style={{ background: meta.color + "1A", color: meta.color }}>
-                      <Icon size={13} /> {meta.label}
-                    </span>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{u.name}</div>
+                <div key={u.id} className="wl-row" style={{ padding: "14px 20px", borderBottom: i < staffList.length - 1 ? "1px solid #EEF1F2" : "none" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <span className="wl-badge" style={{ background: meta.color + "1A", color: meta.color }}>
+                        <Icon size={13} /> {meta.label}
+                      </span>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{u.name}</div>
+                      {u.active === false && (
+                        <span className="wl-badge" style={{ background: "#A13D3D1A", color: "#A13D3D" }}>Deactivated</span>
+                      )}
+                    </div>
+                    {u.role !== "Admin" && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <button
+                          className="wl-btn icon-btn"
+                          onClick={() => { setResetId(resetId === u.id ? null : u.id); setNewPassword(""); setActionError(""); }}
+                          aria-label="Reset password"
+                          title="Reset password"
+                        >
+                          <KeyRound size={15} color="#3D6FB4" />
+                        </button>
+                        <button
+                          className="wl-btn icon-btn"
+                          onClick={() => toggleActive(u)}
+                          disabled={busyId === u.id}
+                          aria-label={u.active === false ? "Reactivate staff" : "Deactivate staff"}
+                          title={u.active === false ? "Reactivate this login" : "Deactivate this login (blocks sign-in)"}
+                        >
+                          {u.active === false ? <RotateCcw size={15} color="#2F7D4F" /> : <Ban size={15} color="#C77D2E" />}
+                        </button>
+                        <button className="wl-btn icon-btn danger" onClick={() => removeStaff(u.id)} style={{ color: "#A13D3D" }} aria-label="Remove staff" title="Remove from staff list (does not delete login)">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  {u.role !== "Admin" && (
-                    <button className="wl-btn icon-btn danger" onClick={() => removeStaff(u.id)} style={{ color: "#A13D3D" }} aria-label="Remove staff" title="Remove staff account">
-                      <Trash2 size={15} />
-                    </button>
+                  {resetId === u.id && (
+                    <div className="wl-fade-in" style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                      <input
+                        className="wl-input"
+                        type="text"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="New password"
+                        style={{ maxWidth: 220 }}
+                      />
+                      <button className="wl-btn icon-btn" onClick={() => submitPasswordReset(u)} disabled={busyId === u.id} aria-label="Save new password" title="Save">
+                        <Check size={15} color="#2F7D4F" />
+                      </button>
+                      <button className="wl-btn icon-btn" onClick={() => { setResetId(null); setNewPassword(""); }} aria-label="Cancel" title="Cancel">
+                        <X size={15} color="#7C8A90" />
+                      </button>
+                    </div>
                   )}
                 </div>
               );

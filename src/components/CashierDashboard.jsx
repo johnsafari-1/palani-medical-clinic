@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Printer } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import Header from "./Header";
 
@@ -16,7 +17,7 @@ export default function CashierDashboard({ staff, onLogout }) {
     const [{ data: c }, { data: adm }, { data: inv }, { data: prices }] = await Promise.all([
       supabase.from("consultations").select("*, patients(name, code), prescriptions(*)").order("created_at", { ascending: false }),
       supabase.from("admissions").select("*, patients(name, code)").eq("status", "Discharged").order("discharged_at", { ascending: false }),
-      supabase.from("invoices").select("*, patients(name)").order("created_at", { ascending: false }),
+      supabase.from("invoices").select("*, patients(name, code)").order("created_at", { ascending: false }),
       supabase.from("price_list").select("*").eq("active", true).order("category").order("name"),
     ]);
     setConsultations(c || []);
@@ -116,6 +117,62 @@ export default function CashierDashboard({ staff, onLogout }) {
   async function markPaid(id) {
     await supabase.from("invoices").update({ status: "Paid" }).eq("id", id);
     loadData();
+  }
+
+  async function printReceipt(inv) {
+    const { data: items } = await supabase.from("invoice_items").select("*").eq("invoice_id", inv.id);
+    const rows = (items || [])
+      .map(
+        (it) => `
+        <tr>
+          <td>${it.label}</td>
+          <td style="text-align:center">${it.quantity}</td>
+          <td style="text-align:right">${it.unit_price != null ? "KES " + Number(it.unit_price).toLocaleString() : "—"}</td>
+          <td style="text-align:right">KES ${Number(it.amount).toLocaleString()}</td>
+        </tr>`
+      )
+      .join("");
+
+    const html = `
+      <!doctype html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Receipt ${inv.code}</title>
+        <style>
+          body { font-family: Arial, sans-serif; color: #1E2A30; padding: 40px; max-width: 640px; margin: 0 auto; }
+          h1 { font-size: 20px; margin: 0 0 4px; }
+          .sub { color: #5B6B72; font-size: 13px; margin-bottom: 24px; }
+          .row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+          th { text-align: left; border-bottom: 2px solid #1E2A30; padding: 8px 4px; font-size: 12px; }
+          td { border-bottom: 1px solid #DCE3E6; padding: 8px 4px; }
+          .total { display: flex; justify-content: space-between; margin-top: 16px; font-size: 16px; font-weight: bold; }
+          .status { display: inline-block; margin-top: 16px; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: bold; background: ${inv.status === "Paid" ? "#2F7D4F1A" : "#A13D3D1A"}; color: ${inv.status === "Paid" ? "#2F7D4F" : "#A13D3D"}; }
+          .footer { margin-top: 32px; font-size: 11px; color: #7C8A90; text-align: center; }
+        </style>
+      </head>
+      <body>
+        <h1>Palani Medical Clinic</h1>
+        <div class="sub">Receipt · ${inv.code}</div>
+        <div class="row"><span>Patient</span><strong>${inv.patients?.name || ""}</strong></div>
+        <div class="row"><span>Patient ID</span><strong>${inv.patients?.code || ""}</strong></div>
+        <div class="row"><span>Date</span><strong>${inv.created_at?.slice(0, 10)}</strong></div>
+        <table>
+          <thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Unit price</th><th style="text-align:right">Amount</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div class="total"><span>Total</span><span>KES ${Number(inv.total).toLocaleString()}</span></div>
+        <span class="status">${inv.status}</span>
+        <div class="footer">Thank you for visiting Palani Medical Clinic.</div>
+      </body>
+      </html>`;
+
+    const win = window.open("", "_blank");
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    win.print();
   }
 
   return (
@@ -223,11 +280,16 @@ export default function CashierDashboard({ staff, onLogout }) {
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{inv.patients?.name} <span style={{ fontFamily: "IBM Plex Mono, monospace", fontWeight: 500, color: "#7C8A90" }}>· KES {Number(inv.total).toLocaleString()}</span></div>
                       <div style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#7C8A90" }}>{inv.code} · {inv.created_at?.slice(0, 10)}</div>
                     </div>
-                    {inv.status === "Unpaid" ? (
-                      <button className="wl-btn" onClick={() => markPaid(inv.id)} style={{ background: "#2F7D4F", color: "#fff" }}>Mark paid</button>
-                    ) : (
-                      <span className="wl-badge" style={{ background: "#2F7D4F1A", color: "#2F7D4F" }}>Paid</span>
-                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {inv.status === "Unpaid" ? (
+                        <button className="wl-btn" onClick={() => markPaid(inv.id)} style={{ background: "#2F7D4F", color: "#fff" }}>Mark paid</button>
+                      ) : (
+                        <span className="wl-badge" style={{ background: "#2F7D4F1A", color: "#2F7D4F" }}>Paid</span>
+                      )}
+                      <button className="wl-btn icon-btn" onClick={() => printReceipt(inv)} aria-label="Print receipt" title="Print receipt">
+                        <Printer size={15} color="#5B6B72" />
+                      </button>
+                    </div>
                   </div>
                 ))
               )}

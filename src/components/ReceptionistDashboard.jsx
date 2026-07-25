@@ -12,6 +12,7 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
   const [query, setQuery] = useState("");
   const [justAdded, setJustAdded] = useState(null);
   const [selectedPatient, setSelectedPatient] = useState(null);
+  const [duplicateWarning, setDuplicateWarning] = useState(null);
 
   async function loadPatients() {
     setLoading(true);
@@ -24,12 +25,35 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
     loadPatients();
   }, []);
 
-  async function addPatient(e) {
-    e.preventDefault();
-    if (!form.name.trim() || !form.dob || !form.phone.trim()) {
-      setFormError("Fill in name, date of birth, and phone number.");
-      return;
+  function validateForm() {
+    const name = form.name.trim();
+    const phone = form.phone.trim();
+    if (!name || !form.dob || !phone) {
+      return "Fill in name, date of birth, and phone number.";
     }
+    const phoneDigits = phone.replace(/[\s+-]/g, "");
+    if (!/^\d{7,15}$/.test(phoneDigits)) {
+      return "Enter a valid phone number (7–15 digits).";
+    }
+    const dobDate = new Date(form.dob);
+    const today = new Date();
+    const minDate = new Date();
+    minDate.setFullYear(today.getFullYear() - 120);
+    if (dobDate > today) {
+      return "Date of birth can't be in the future.";
+    }
+    if (dobDate < minDate) {
+      return "That date of birth looks incorrect — please check it.";
+    }
+    return null;
+  }
+
+  function findDuplicate() {
+    const name = form.name.trim().toLowerCase();
+    return patients.find((p) => p.name.trim().toLowerCase() === name && p.dob === form.dob);
+  }
+
+  async function insertPatient() {
     const { data, error } = await supabase
       .from("patients")
       .insert({
@@ -49,9 +73,32 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
     }
     setForm({ name: "", dob: "", gender: "Female", phone: "", address: "" });
     setFormError("");
+    setDuplicateWarning(null);
     setJustAdded(data.code);
     setTimeout(() => setJustAdded(null), 3000);
     loadPatients();
+  }
+
+  async function addPatient(e) {
+    e.preventDefault();
+    const validationError = validateForm();
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+    setFormError("");
+
+    const duplicate = findDuplicate();
+    if (duplicate) {
+      setDuplicateWarning(duplicate);
+      return;
+    }
+
+    await insertPatient();
+  }
+
+  async function confirmRegisterAnyway() {
+    await insertPatient();
   }
 
   const filtered = patients.filter((p) => {
@@ -106,6 +153,27 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
             </div>
           </form>
         </div>
+
+        {duplicateWarning && (
+          <div className="wl-fade-in" style={{ background: "#C77D2E1A", border: "1px solid #C77D2E44", borderRadius: 12, padding: 16, marginBottom: 24 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, color: "#C77D2E" }}>
+              <AlertCircle size={16} />
+              <strong style={{ fontSize: 13 }}>Possible duplicate patient</strong>
+            </div>
+            <p style={{ fontSize: 13, color: "#5B6B72", margin: "0 0 12px" }}>
+              A patient named <strong>{duplicateWarning.name}</strong> with the same date of birth is already registered as <span style={{ fontFamily: "IBM Plex Mono, monospace" }}>{duplicateWarning.code}</span>.
+            </p>
+            <p style={{ fontSize: 12, color: "#5B6B72", margin: "0 0 12px", background: "#fff", borderRadius: 8, padding: "10px 12px" }}>
+              <strong>If this is a returning patient</strong>, don't register them again — search for <strong>{duplicateWarning.name}</strong> in the list below instead and use their existing ID, so their history stays in one place.
+              <br /><br />
+              Only continue below if this is genuinely a different person (e.g. twins) who happens to share the same name and birth date.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="wl-btn" onClick={confirmRegisterAnyway} style={{ background: "#C77D2E", color: "#fff" }}>This is a different person — register anyway</button>
+              <button className="wl-btn" onClick={() => setDuplicateWarning(null)} style={{ background: "#F5F7F8", color: "#5B6B72" }}>Cancel</button>
+            </div>
+          </div>
+        )}
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 15, margin: 0 }}>

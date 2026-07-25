@@ -5,6 +5,7 @@ import { ROLES, roleMeta } from "../constants";
 import Header from "./Header";
 import PriceListManager from "./PriceListManager";
 import ReportsPanel from "./ReportsPanel";
+import AuditLogPanel from "./AuditLogPanel";
 
 // NOTE: your Edge Function may be named "create-staff" or "quick-handler"
 // depending on what you named it when deploying. Update this if needed.
@@ -125,9 +126,22 @@ export default function AdminDashboard({ staff, onLogout }) {
           >
             Reports
           </button>
+          <button
+            className="wl-btn wl-tab"
+            onClick={() => setTab("audit")}
+            style={{ background: tab === "audit" ? "#2B6777" : "#F5F7F8", color: tab === "audit" ? "#fff" : "#5B6B72" }}
+          >
+            Audit log
+          </button>
         </div>
 
-        {tab === "reports" ? (
+        {tab === "audit" ? (
+          <>
+            <h2 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 18, margin: "0 0 4px" }}>Audit log</h2>
+            <p style={{ color: "#5B6B72", fontSize: 13, margin: "0 0 24px" }}>Every edit and deletion across the system, recorded automatically. Click a row to see what changed.</p>
+            <AuditLogPanel />
+          </>
+        ) : tab === "reports" ? (
           <>
             <h2 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 18, margin: "0 0 4px" }}>Reports</h2>
             <p style={{ color: "#5B6B72", fontSize: 13, margin: "0 0 24px" }}>A snapshot of how the clinic is running right now.</p>

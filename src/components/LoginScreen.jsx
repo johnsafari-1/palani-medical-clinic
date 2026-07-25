@@ -32,8 +32,8 @@ export default function LoginScreen() {
   }
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
-      <div style={{ flex: "0 0 380px", padding: "56px 48px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+    <div className="wl-login-outer" style={{ display: "flex", minHeight: "100vh" }}>
+      <div className="wl-login-panel" style={{ flex: "0 0 380px", padding: "56px 48px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 32 }}>
           <div style={{ width: 8, height: 28, borderRadius: 2, background: "#2B6777" }} />
           <span style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 22 }}>Palani Medical Clinic</span>
@@ -82,9 +82,9 @@ export default function LoginScreen() {
         </div>
       </div>
 
-      <div style={{ flex: 1, background: "#1E2A30", padding: "56px 48px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+      <div className="wl-login-panel" style={{ flex: 1, background: "#1E2A30", padding: "56px 48px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
         <div style={{ color: "#8FA3AA", fontSize: 12, fontWeight: 600, letterSpacing: 0.4, textTransform: "uppercase", marginBottom: 20 }}>Staff directory</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="wl-role-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           {ROLES.map((r) => {
             const Icon = r.icon;
             return (

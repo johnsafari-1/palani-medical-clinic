@@ -178,7 +178,7 @@ export default function CashierDashboard({ staff, onLogout }) {
   return (
     <div>
       <Header staff={staff} onLogout={onLogout} />
-      <div style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
+      <div className="wl-page" style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
         <h2 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 18, margin: "0 0 4px" }}>Billing</h2>
         <p style={{ color: "#5B6B72", fontSize: 13, margin: "0 0 24px" }}>Generate an invoice from a consultation, then collect payment.</p>
 
@@ -231,7 +231,7 @@ export default function CashierDashboard({ staff, onLogout }) {
                 </h3>
                 <form onSubmit={createInvoice}>
                   {lines.map((l) => (
-                    <div key={l.key} style={{ display: "grid", gridTemplateColumns: "1.4fr 0.7fr 0.7fr", gap: 10, alignItems: "end", padding: "8px 0", borderBottom: "1px solid #EEF1F2" }}>
+                    <div key={l.key} className="wl-form-grid" style={{ display: "grid", gridTemplateColumns: "1.4fr 0.7fr 0.7fr", gap: 10, alignItems: "end", padding: "8px 0", borderBottom: "1px solid #EEF1F2" }}>
                       <div>
                         <label style={{ fontSize: 11, color: "#7C8A90", display: "block", marginBottom: 2 }}>{l.label}</label>
                         <select className="wl-input" value={l.priceItemId} onChange={(e) => updateLine(l.key, "priceItemId", e.target.value)}>

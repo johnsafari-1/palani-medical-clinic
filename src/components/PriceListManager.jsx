@@ -58,7 +58,7 @@ export default function PriceListManager() {
     <div>
       <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 20, marginBottom: 24 }}>
         <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 15, margin: "0 0 14px" }}>Add price list item</h3>
-        <form onSubmit={addItem} style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 0.8fr 0.8fr auto", gap: 10, alignItems: "end" }}>
+        <form onSubmit={addItem} className="wl-form-grid" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 0.8fr 0.8fr auto", gap: 10, alignItems: "end" }}>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Name</label>
             <input className="wl-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Ibuprofen 400mg" />

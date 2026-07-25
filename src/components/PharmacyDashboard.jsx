@@ -34,7 +34,7 @@ export default function PharmacyDashboard({ staff, onLogout }) {
   return (
     <div>
       <Header staff={staff} onLogout={onLogout} />
-      <div style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
+      <div className="wl-page" style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
         <h2 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 18, margin: "0 0 4px" }}>Prescription queue</h2>
         <p style={{ color: "#5B6B72", fontSize: 13, margin: "0 0 24px" }}>Prescriptions written by doctors appear here for dispensing.</p>
 

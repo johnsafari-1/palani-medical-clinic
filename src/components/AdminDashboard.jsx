@@ -102,7 +102,7 @@ export default function AdminDashboard({ staff, onLogout }) {
   return (
     <div>
       <Header staff={staff} onLogout={onLogout} />
-      <div style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
+      <div className="wl-page" style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
           <button
             className="wl-btn wl-tab"
@@ -145,7 +145,7 @@ export default function AdminDashboard({ staff, onLogout }) {
         <p style={{ color: "#5B6B72", fontSize: 13, margin: "0 0 24px" }}>Create logins for each department. Staff sign in with the username and password you set here.</p>
 
         <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 20, marginBottom: 24 }}>
-          <form onSubmit={addStaff} style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
+          <form onSubmit={addStaff} className="wl-form-grid" style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Full name</label>
               <input className="wl-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Jane Mwangi" />

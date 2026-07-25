@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Plus, Search, User, AlertCircle } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import Header from "./Header";
+import PatientRecord from "./PatientRecord";
 
 export default function ReceptionistDashboard({ staff, onLogout }) {
   const [patients, setPatients] = useState([]);
@@ -10,6 +11,7 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
   const [formError, setFormError] = useState("");
   const [query, setQuery] = useState("");
   const [justAdded, setJustAdded] = useState(null);
+  const [selectedPatient, setSelectedPatient] = useState(null);
 
   async function loadPatients() {
     setLoading(true);
@@ -115,6 +117,7 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
           </div>
         </div>
 
+        <p style={{ fontSize: 12, color: "#7C8A90", margin: "-4px 0 8px" }}>Click any patient to see their full record — consultations, vitals, labs, admissions, and invoices in one place.</p>
         <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, overflow: "hidden" }}>
           {loading ? (
             <div style={{ padding: 32, textAlign: "center", color: "#7C8A90", fontSize: 13 }}>Loading patients…</div>
@@ -124,7 +127,12 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
             </div>
           ) : (
             filtered.map((p, i) => (
-              <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: i < filtered.length - 1 ? "1px solid #EEF1F2" : "none" }}>
+              <div
+                key={p.id}
+                className="wl-row"
+                onClick={() => setSelectedPatient(p)}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: i < filtered.length - 1 ? "1px solid #EEF1F2" : "none", cursor: "pointer" }}
+              >
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#7C5CBF1A", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <User size={16} color="#7C5CBF" />
@@ -143,6 +151,7 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
           )}
         </div>
       </div>
+      {selectedPatient && <PatientRecord patient={selectedPatient} onClose={() => setSelectedPatient(null)} />}
     </div>
   );
 }

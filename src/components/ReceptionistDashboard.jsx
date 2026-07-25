@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Plus, Search, User, AlertCircle } from "lucide-react";
+import { Plus, Search, User, AlertCircle, UserPlus, Clock } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import Header from "./Header";
 import PatientRecord from "./PatientRecord";
 
 export default function ReceptionistDashboard({ staff, onLogout }) {
   const [patients, setPatients] = useState([]);
+  const [visits, setVisits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ name: "", dob: "", gender: "Female", phone: "", address: "" });
   const [formError, setFormError] = useState("");
@@ -16,14 +17,23 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
 
   async function loadPatients() {
     setLoading(true);
-    const { data, error } = await supabase.from("patients").select("*").order("registered_at", { ascending: false });
+    const [{ data, error }, { data: visitData }] = await Promise.all([
+      supabase.from("patients").select("*").order("registered_at", { ascending: false }),
+      supabase.from("visits").select("*").in("status", ["Waiting", "In Consultation"]),
+    ]);
     if (!error) setPatients(data);
+    setVisits(visitData || []);
     setLoading(false);
   }
 
   useEffect(() => {
     loadPatients();
   }, []);
+
+  async function checkIn(patientId) {
+    await supabase.from("visits").insert({ patient_id: patientId, checked_in_by: staff.id });
+    loadPatients();
+  }
 
   function validateForm() {
     const name = form.name.trim();
@@ -194,28 +204,49 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
               {patients.length === 0 ? "No patients registered yet. Add the first one above." : "No patients match your search."}
             </div>
           ) : (
-            filtered.map((p, i) => (
-              <div
-                key={p.id}
-                className="wl-row"
-                onClick={() => setSelectedPatient(p)}
-                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: i < filtered.length - 1 ? "1px solid #EEF1F2" : "none", cursor: "pointer" }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#7C5CBF1A", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <User size={16} color="#7C5CBF" />
+            filtered.map((p, i) => {
+              const activeVisit = visits.find((v) => v.patient_id === p.id);
+              return (
+                <div
+                  key={p.id}
+                  className="wl-row"
+                  onClick={() => setSelectedPatient(p)}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: i < filtered.length - 1 ? "1px solid #EEF1F2" : "none", cursor: "pointer" }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#7C5CBF1A", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <User size={16} color="#7C5CBF" />
+                    </div>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</span>
+                        {activeVisit && (
+                          <span className="wl-badge" style={{ background: activeVisit.status === "Waiting" ? "#C77D2E1A" : "#3D6FB41A", color: activeVisit.status === "Waiting" ? "#C77D2E" : "#3D6FB4" }}>
+                            <Clock size={11} /> {activeVisit.status}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#7C8A90" }}>{p.gender} · DOB {p.dob} · {p.phone}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</div>
-                    <div style={{ fontSize: 12, color: "#7C8A90" }}>{p.gender} · DOB {p.dob} · {p.phone}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 12, fontWeight: 500 }}>{p.code}</div>
+                      <div style={{ fontSize: 11, color: "#7C8A90" }}>Registered {p.registered_at?.slice(0, 10)}</div>
+                    </div>
+                    {!activeVisit && (
+                      <button
+                        className="wl-btn"
+                        onClick={(e) => { e.stopPropagation(); checkIn(p.id); }}
+                        style={{ background: "#2B6777", color: "#fff", fontSize: 12, padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
+                      >
+                        <UserPlus size={13} /> Check in
+                      </button>
+                    )}
                   </div>
                 </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 12, fontWeight: 500 }}>{p.code}</div>
-                  <div style={{ fontSize: 11, color: "#7C8A90" }}>Registered {p.registered_at?.slice(0, 10)}</div>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>

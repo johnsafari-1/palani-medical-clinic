@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Search, User, AlertCircle } from "lucide-react";
+import { Search, User, AlertCircle, Clock } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import Header from "./Header";
 
 export default function NurseDashboard({ staff, onLogout }) {
   const [patients, setPatients] = useState([]);
+  const [queue, setQueue] = useState([]);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [history, setHistory] = useState([]);
@@ -14,7 +15,17 @@ export default function NurseDashboard({ staff, onLogout }) {
 
   useEffect(() => {
     supabase.from("patients").select("*").order("name").then(({ data }) => setPatients(data || []));
+    loadQueue();
   }, []);
+
+  async function loadQueue() {
+    const { data } = await supabase
+      .from("visits")
+      .select("*, patients(id, name, code)")
+      .in("status", ["Waiting", "In Consultation"])
+      .order("checked_in_at", { ascending: true });
+    setQueue(data || []);
+  }
 
   const selected = patients.find((p) => p.id === selectedId) || null;
 
@@ -73,6 +84,37 @@ export default function NurseDashboard({ staff, onLogout }) {
       <Header staff={staff} onLogout={onLogout} />
       <div className="wl-split-page" style={{ padding: 32, maxWidth: 1000, margin: "0 auto", display: "grid", gridTemplateColumns: "280px 1fr", gap: 20 }}>
         <div>
+          {queue.length > 0 && (
+            <div style={{ marginBottom: 18 }}>
+              <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 15, margin: "0 0 10px", display: "flex", alignItems: "center", gap: 6 }}>
+                <Clock size={14} color="#C77D2E" /> Today's queue <span style={{ color: "#7C8A90", fontWeight: 500 }}>({queue.length})</span>
+              </h3>
+              <div className="wl-card" style={{ overflow: "hidden" }}>
+                {queue.map((v, i) => (
+                  <div
+                    key={v.id}
+                    className="wl-row"
+                    onClick={() => selectPatient(v.patient_id)}
+                    style={{
+                      padding: "10px 14px",
+                      borderBottom: i < queue.length - 1 ? "1px solid #EEF1F2" : "none",
+                      cursor: "pointer",
+                      background: selectedId === v.patient_id ? "#C2467D14" : "transparent",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{v.patients?.name}</span>
+                      <span className="wl-badge" style={{ background: v.status === "Waiting" ? "#C77D2E1A" : "#3D6FB41A", color: v.status === "Waiting" ? "#C77D2E" : "#3D6FB4", fontSize: 10 }}>
+                        {v.status}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#7C8A90" }}>Checked in {new Date(v.checked_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 15, margin: "0 0 10px" }}>Patients</h3>
           <div style={{ position: "relative", marginBottom: 10 }}>
             <Search size={14} color="#7C8A90" style={{ position: "absolute", left: 10, top: 11 }} />

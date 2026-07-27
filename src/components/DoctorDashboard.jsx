@@ -20,6 +20,9 @@ export default function DoctorDashboard({ staff, onLogout }) {
   const [labTests, setLabTests] = useState("");
   const [formError, setFormError] = useState("");
   const [savedMsg, setSavedMsg] = useState("");
+  const [followUpTargetId, setFollowUpTargetId] = useState(null);
+  const [followUpRx, setFollowUpRx] = useState([{ key: 1, drug: "", dosage: "", instructions: "" }]);
+  const [followUpError, setFollowUpError] = useState("");
 
   useEffect(() => {
     supabase.from("patients").select("*").order("name").then(({ data }) => setPatients(data || []));
@@ -111,6 +114,8 @@ export default function DoctorDashboard({ staff, onLogout }) {
     setLabTests("");
     setFormError("");
     setSavedMsg("");
+    setFollowUpTargetId(null);
+    setFollowUpError("");
     loadHistory(id);
   }
 
@@ -130,6 +135,45 @@ export default function DoctorDashboard({ staff, onLogout }) {
   }
   function removeRxRow(key) {
     setRx(rx.filter((r) => r.key !== key));
+  }
+
+  function startFollowUp(consultationId) {
+    setFollowUpTargetId(consultationId);
+    setFollowUpRx([{ key: Date.now(), drug: "", dosage: "", instructions: "" }]);
+    setFollowUpError("");
+  }
+
+  function cancelFollowUp() {
+    setFollowUpTargetId(null);
+    setFollowUpError("");
+  }
+
+  function updateFollowUpRow(key, field, value) {
+    setFollowUpRx(followUpRx.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
+  }
+  function addFollowUpRow() {
+    setFollowUpRx([...followUpRx, { key: Date.now(), drug: "", dosage: "", instructions: "" }]);
+  }
+  function removeFollowUpRow(key) {
+    setFollowUpRx(followUpRx.filter((r) => r.key !== key));
+  }
+
+  async function saveFollowUpPrescription(consultationId) {
+    const rows = followUpRx
+      .filter((r) => r.drug.trim())
+      .map((r) => ({ consultation_id: consultationId, drug: r.drug.trim(), dosage: r.dosage.trim(), instructions: r.instructions.trim() }));
+    if (rows.length === 0) {
+      setFollowUpError("Add at least one drug before saving.");
+      return;
+    }
+    const { error } = await supabase.from("prescriptions").insert(rows);
+    if (error) {
+      setFollowUpError(error.message);
+      return;
+    }
+    setFollowUpTargetId(null);
+    setFollowUpError("");
+    loadHistory(selected.id);
   }
 
   async function saveConsultation(e) {
@@ -416,11 +460,52 @@ export default function DoctorDashboard({ staff, onLogout }) {
                         </div>
                         {c.notes && <p style={{ fontSize: 12, color: "#5B6B72", margin: "0 0 8px" }}>{c.notes}</p>}
                         {c.prescriptions?.length > 0 && (
-                          <div style={{ fontSize: 12, color: "#5B6B72" }}>
+                          <div style={{ fontSize: 12, color: "#5B6B72", marginBottom: 8 }}>
                             {c.prescriptions.map((p) => (
                               <div key={p.id}>• {p.drug} {p.dosage && `— ${p.dosage}`} {p.instructions && `(${p.instructions})`} {p.dispensed && <span style={{ color: "#2F7D4F" }}> ✓ dispensed</span>}</div>
                             ))}
                           </div>
+                        )}
+
+                        {followUpTargetId === c.id ? (
+                          <div className="wl-fade-in" style={{ background: "#F5F7F8", borderRadius: 8, padding: 12, marginTop: 8 }}>
+                            <p style={{ fontSize: 11, color: "#7C8A90", margin: "0 0 8px" }}>Adding a prescription to this consultation — no new diagnosis needed.</p>
+                            {followUpRx.map((r) => (
+                              <div key={r.key} style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1.2fr auto", gap: 6, marginBottom: 6 }}>
+                                <input className="wl-input" value={r.drug} onChange={(e) => updateFollowUpRow(r.key, "drug", e.target.value)} placeholder="Drug name" />
+                                <input className="wl-input" value={r.dosage} onChange={(e) => updateFollowUpRow(r.key, "dosage", e.target.value)} placeholder="Dosage" />
+                                <input className="wl-input" value={r.instructions} onChange={(e) => updateFollowUpRow(r.key, "instructions", e.target.value)} placeholder="Frequency / duration" />
+                                <button type="button" className="wl-btn icon-btn danger" onClick={() => removeFollowUpRow(r.key)} style={{ color: "#A13D3D" }} aria-label="Remove drug row" title="Remove this drug">
+                                  <X size={15} />
+                                </button>
+                              </div>
+                            ))}
+                            <button type="button" className="wl-btn" onClick={addFollowUpRow} style={{ background: "#EEF1F2", color: "#5B6B72", display: "flex", alignItems: "center", gap: 6, marginBottom: 10, fontSize: 12 }}>
+                              <Plus size={12} /> Add drug
+                            </button>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <button type="button" className="wl-btn" onClick={() => saveFollowUpPrescription(c.id)} style={{ background: "#2B6777", color: "#fff", fontSize: 12 }}>
+                                Save prescription
+                              </button>
+                              <button type="button" className="wl-btn" onClick={cancelFollowUp} style={{ background: "#F5F7F8", color: "#5B6B72", fontSize: 12 }}>
+                                Cancel
+                              </button>
+                              {followUpError && (
+                                <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#A13D3D", fontSize: 12 }}>
+                                  <AlertCircle size={13} /> {followUpError}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className="wl-btn"
+                            onClick={() => startFollowUp(c.id)}
+                            style={{ background: "transparent", color: "#2B6777", fontSize: 12, padding: "4px 0", display: "flex", alignItems: "center", gap: 4 }}
+                          >
+                            <Plus size={12} /> Add prescription based on results
+                          </button>
                         )}
                       </div>
                     ))}

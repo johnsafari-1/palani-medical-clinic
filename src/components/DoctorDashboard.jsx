@@ -146,6 +146,12 @@ export default function DoctorDashboard({ staff, onLogout }) {
     setShowReferralForm(false);
     loadHistory(selected.id);
     printReferralLetter(data);
+
+    const inProgress = queue.find((v) => v.patient_id === selected.id && v.status === "In Consultation");
+    if (inProgress) {
+      await supabase.from("visits").update({ status: "Completed", completed_at: new Date().toISOString() }).eq("id", inProgress.id);
+      loadQueue();
+    }
   }
 
   function printReferralLetter(referral) {

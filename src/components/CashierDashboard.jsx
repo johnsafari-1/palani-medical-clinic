@@ -11,6 +11,8 @@ export default function CashierDashboard({ staff, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [billing, setBilling] = useState(null);
   const [lines, setLines] = useState([]);
+  const [payMethodTarget, setPayMethodTarget] = useState(null);
+  const [payMethod, setPayMethod] = useState("Cash");
 
   async function loadData() {
     setLoading(true);
@@ -114,8 +116,14 @@ export default function CashierDashboard({ staff, onLogout }) {
     loadData();
   }
 
-  async function markPaid(id) {
-    await supabase.from("invoices").update({ status: "Paid" }).eq("id", id);
+  function openPayMethod(id) {
+    setPayMethodTarget(id);
+    setPayMethod("Cash");
+  }
+
+  async function confirmPaid(id) {
+    await supabase.from("invoices").update({ status: "Paid", payment_method: payMethod, paid_at: new Date().toISOString() }).eq("id", id);
+    setPayMethodTarget(null);
     loadData();
   }
 
@@ -158,6 +166,7 @@ export default function CashierDashboard({ staff, onLogout }) {
         <div class="row"><span>Patient</span><strong>${inv.patients?.name || ""}</strong></div>
         <div class="row"><span>Patient ID</span><strong>${inv.patients?.code || ""}</strong></div>
         <div class="row"><span>Date</span><strong>${inv.created_at?.slice(0, 10)}</strong></div>
+        ${inv.payment_method ? `<div class="row"><span>Payment method</span><strong>${inv.payment_method}</strong></div>` : ""}
         <table>
           <thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Unit price</th><th style="text-align:right">Amount</th></tr></thead>
           <tbody>${rows}</tbody>
@@ -282,9 +291,22 @@ export default function CashierDashboard({ staff, onLogout }) {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       {inv.status === "Unpaid" ? (
-                        <button className="wl-btn" onClick={() => markPaid(inv.id)} style={{ background: "#2F7D4F", color: "#fff" }}>Mark paid</button>
+                        payMethodTarget === inv.id ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <select className="wl-input" value={payMethod} onChange={(e) => setPayMethod(e.target.value)} style={{ width: 110 }}>
+                              <option>Cash</option>
+                              <option>M-Pesa</option>
+                              <option>Card</option>
+                              <option>Other</option>
+                            </select>
+                            <button className="wl-btn" onClick={() => confirmPaid(inv.id)} style={{ background: "#2F7D4F", color: "#fff", fontSize: 12 }}>Confirm</button>
+                            <button className="wl-btn" onClick={() => setPayMethodTarget(null)} style={{ background: "#F5F7F8", color: "#5B6B72", fontSize: 12 }}>Cancel</button>
+                          </div>
+                        ) : (
+                          <button className="wl-btn" onClick={() => openPayMethod(inv.id)} style={{ background: "#2F7D4F", color: "#fff" }}>Mark paid</button>
+                        )
                       ) : (
-                        <span className="wl-badge" style={{ background: "#2F7D4F1A", color: "#2F7D4F" }}>Paid</span>
+                        <span className="wl-badge" style={{ background: "#2F7D4F1A", color: "#2F7D4F" }}>Paid via {inv.payment_method || "—"}</span>
                       )}
                       <button className="wl-btn icon-btn" onClick={() => printReceipt(inv)} aria-label="Print receipt" title="Print receipt">
                         <Printer size={15} color="#5B6B72" />

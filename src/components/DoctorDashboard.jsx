@@ -114,6 +114,12 @@ export default function DoctorDashboard({ staff, onLogout }) {
     if (!error) {
       loadHistory(selected.id);
       loadAdmittedIds();
+
+      const inProgress = queue.find((v) => v.patient_id === selected.id && v.status === "In Consultation");
+      if (inProgress) {
+        await supabase.from("visits").update({ status: "Completed", completed_at: new Date().toISOString() }).eq("id", inProgress.id);
+        loadQueue();
+      }
     }
   }
 

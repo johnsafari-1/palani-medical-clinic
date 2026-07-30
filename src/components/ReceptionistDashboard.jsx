@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Search, User, AlertCircle, UserPlus, Clock } from "lucide-react";
+import { Plus, Search, User, AlertCircle, UserPlus, Clock, Send } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import Header from "./Header";
 import PatientRecord from "./PatientRecord";
@@ -14,6 +14,10 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
   const [justAdded, setJustAdded] = useState(null);
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [duplicateWarning, setDuplicateWarning] = useState(null);
+  const [referralFormPatientId, setReferralFormPatientId] = useState(null);
+  const [incomingReferralForm, setIncomingReferralForm] = useState({ facility_name: "", referring_doctor: "", reason: "" });
+  const [incomingReferralError, setIncomingReferralError] = useState("");
+  const [referralSavedId, setReferralSavedId] = useState(null);
 
   async function loadPatients() {
     setLoading(true);
@@ -33,6 +37,44 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
   async function checkIn(patientId) {
     await supabase.from("visits").insert({ patient_id: patientId, checked_in_by: staff.id });
     loadPatients();
+  }
+
+  function openIncomingReferralForm(patientId) {
+    setReferralFormPatientId(patientId);
+    setIncomingReferralForm({ facility_name: "", referring_doctor: "", reason: "" });
+    setIncomingReferralError("");
+  }
+
+  function cancelIncomingReferralForm() {
+    setReferralFormPatientId(null);
+    setIncomingReferralError("");
+  }
+
+  async function submitIncomingReferral(patientId) {
+    if (!incomingReferralForm.facility_name.trim() || !incomingReferralForm.reason.trim()) {
+      setIncomingReferralError("Fill in the referring facility and reason.");
+      return;
+    }
+    const { data, error } = await supabase
+      .from("referrals")
+      .insert({
+        patient_id: patientId,
+        direction: "Incoming",
+        facility_name: incomingReferralForm.facility_name.trim(),
+        referring_doctor: incomingReferralForm.referring_doctor.trim(),
+        reason: incomingReferralForm.reason.trim(),
+        created_by: staff.id,
+      })
+      .select()
+      .single();
+    if (error) {
+      setIncomingReferralError(error.message);
+      return;
+    }
+    setReferralFormPatientId(null);
+    setIncomingReferralError("");
+    setReferralSavedId(data.code);
+    setTimeout(() => setReferralSavedId(null), 3000);
   }
 
   function validateForm() {
@@ -195,6 +237,12 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
           </div>
         </div>
 
+        {referralSavedId && (
+          <div className="wl-fade-in" style={{ fontSize: 13, color: "#2F7D4F", fontFamily: "IBM Plex Mono, monospace", marginBottom: 12 }}>
+            Incoming referral logged as {referralSavedId}
+          </div>
+        )}
+
         <p style={{ fontSize: 12, color: "#7C8A90", margin: "-4px 0 8px" }}>Click any patient to see their full record — consultations, vitals, labs, admissions, and invoices in one place.</p>
         <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, overflow: "hidden" }}>
           {loading ? (
@@ -207,43 +255,74 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
             filtered.map((p, i) => {
               const activeVisit = visits.find((v) => v.patient_id === p.id);
               return (
-                <div
-                  key={p.id}
-                  className="wl-row"
-                  onClick={() => setSelectedPatient(p)}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: i < filtered.length - 1 ? "1px solid #EEF1F2" : "none", cursor: "pointer" }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#7C5CBF1A", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <User size={16} color="#7C5CBF" />
-                    </div>
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</span>
-                        {activeVisit && (
-                          <span className="wl-badge" style={{ background: activeVisit.status === "Waiting" ? "#C77D2E1A" : "#3D6FB41A", color: activeVisit.status === "Waiting" ? "#C77D2E" : "#3D6FB4" }}>
-                            <Clock size={11} /> {activeVisit.status}
-                          </span>
-                        )}
+                <div key={p.id} style={{ borderBottom: i < filtered.length - 1 ? "1px solid #EEF1F2" : "none" }}>
+                  <div
+                    className="wl-row"
+                    onClick={() => setSelectedPatient(p)}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", cursor: "pointer" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{ width: 34, height: 34, borderRadius: "50%", background: "#7C5CBF1A", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <User size={16} color="#7C5CBF" />
                       </div>
-                      <div style={{ fontSize: 12, color: "#7C8A90" }}>{p.gender} · DOB {p.dob} · {p.phone}</div>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</span>
+                          {activeVisit && (
+                            <span className="wl-badge" style={{ background: activeVisit.status === "Waiting" ? "#C77D2E1A" : "#3D6FB41A", color: activeVisit.status === "Waiting" ? "#C77D2E" : "#3D6FB4" }}>
+                              <Clock size={11} /> {activeVisit.status}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 12, color: "#7C8A90" }}>{p.gender} · DOB {p.dob} · {p.phone}</div>
+                      </div>
                     </div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 12, fontWeight: 500 }}>{p.code}</div>
-                      <div style={{ fontSize: 11, color: "#7C8A90" }}>Registered {p.registered_at?.slice(0, 10)}</div>
-                    </div>
-                    {!activeVisit && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 12, fontWeight: 500 }}>{p.code}</div>
+                        <div style={{ fontSize: 11, color: "#7C8A90" }}>Registered {p.registered_at?.slice(0, 10)}</div>
+                      </div>
                       <button
                         className="wl-btn"
-                        onClick={(e) => { e.stopPropagation(); checkIn(p.id); }}
-                        style={{ background: "#2B6777", color: "#fff", fontSize: 12, padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
+                        onClick={(e) => { e.stopPropagation(); openIncomingReferralForm(p.id); }}
+                        style={{ background: "#7C5CBF1A", color: "#7C5CBF", fontSize: 12, padding: "8px 10px", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
+                        title="Log an incoming referral for this patient"
                       >
-                        <UserPlus size={13} /> Check in
+                        <Send size={13} /> Referral
                       </button>
-                    )}
+                      {!activeVisit && (
+                        <button
+                          className="wl-btn"
+                          onClick={(e) => { e.stopPropagation(); checkIn(p.id); }}
+                          style={{ background: "#2B6777", color: "#fff", fontSize: 12, padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
+                        >
+                          <UserPlus size={13} /> Check in
+                        </button>
+                      )}
+                    </div>
                   </div>
+
+                  {referralFormPatientId === p.id && (
+                    <div className="wl-fade-in" style={{ padding: "0 20px 16px" }} onClick={(e) => e.stopPropagation()}>
+                      <div style={{ background: "#F5F7F8", borderRadius: 8, padding: 12 }}>
+                        <p style={{ fontSize: 11, color: "#7C8A90", margin: "0 0 8px" }}>Logging an incoming referral for <strong>{p.name}</strong> — where did they come from, and why?</p>
+                        <div className="wl-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                          <input className="wl-input" value={incomingReferralForm.facility_name} onChange={(e) => setIncomingReferralForm({ ...incomingReferralForm, facility_name: e.target.value })} placeholder="Referring facility" />
+                          <input className="wl-input" value={incomingReferralForm.referring_doctor} onChange={(e) => setIncomingReferralForm({ ...incomingReferralForm, referring_doctor: e.target.value })} placeholder="Referring doctor (optional)" />
+                        </div>
+                        <input className="wl-input" value={incomingReferralForm.reason} onChange={(e) => setIncomingReferralForm({ ...incomingReferralForm, reason: e.target.value })} placeholder="Reason given for referral" style={{ marginBottom: 8 }} />
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <button className="wl-btn" onClick={() => submitIncomingReferral(p.id)} style={{ background: "#7C5CBF", color: "#fff", fontSize: 12 }}>Save referral</button>
+                          <button className="wl-btn" onClick={cancelIncomingReferralForm} style={{ background: "#fff", color: "#5B6B72", fontSize: 12 }}>Cancel</button>
+                          {incomingReferralError && (
+                            <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#A13D3D", fontSize: 12 }}>
+                              <AlertCircle size={13} /> {incomingReferralError}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })

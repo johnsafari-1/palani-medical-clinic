@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Search, User, Plus, X, FileText, AlertCircle, HeartPulse, FlaskConical, BedDouble, Clock } from "lucide-react";
+import { Search, User, Plus, X, FileText, AlertCircle, HeartPulse, FlaskConical, BedDouble, Clock, Send, Printer } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import Header from "./Header";
 
@@ -14,6 +14,10 @@ export default function DoctorDashboard({ staff, onLogout }) {
   const [admission, setAdmission] = useState(null);
   const [admittedIds, setAdmittedIds] = useState(new Set());
   const [admitReason, setAdmitReason] = useState("");
+  const [referrals, setReferrals] = useState([]);
+  const [showReferralForm, setShowReferralForm] = useState(false);
+  const [referralForm, setReferralForm] = useState({ facility_name: "", referring_doctor: "", reason: "", urgency: "Routine", notes: "" });
+  const [referralError, setReferralError] = useState("");
   const [diagnosis, setDiagnosis] = useState("");
   const [notes, setNotes] = useState("");
   const [rx, setRx] = useState([{ key: 1, drug: "", dosage: "", instructions: "" }]);
@@ -78,6 +82,13 @@ export default function DoctorDashboard({ staff, onLogout }) {
       .limit(1)
       .maybeSingle();
     setAdmission(admissionData || null);
+
+    const { data: referralData } = await supabase
+      .from("referrals")
+      .select("*")
+      .eq("patient_id", patientId)
+      .order("created_at", { ascending: false });
+    setReferrals(referralData || []);
   }
 
   async function admitPatient() {
@@ -106,6 +117,74 @@ export default function DoctorDashboard({ staff, onLogout }) {
     }
   }
 
+  async function submitReferral(e) {
+    e.preventDefault();
+    if (!referralForm.facility_name.trim() || !referralForm.reason.trim()) {
+      setReferralError("Fill in the facility name and reason for referral.");
+      return;
+    }
+    const { data, error } = await supabase
+      .from("referrals")
+      .insert({
+        patient_id: selected.id,
+        direction: "Outgoing",
+        facility_name: referralForm.facility_name.trim(),
+        referring_doctor: referralForm.referring_doctor.trim(),
+        reason: referralForm.reason.trim(),
+        urgency: referralForm.urgency,
+        notes: referralForm.notes.trim(),
+        created_by: staff.id,
+      })
+      .select()
+      .single();
+    if (error) {
+      setReferralError(error.message);
+      return;
+    }
+    setReferralForm({ facility_name: "", referring_doctor: "", reason: "", urgency: "Routine", notes: "" });
+    setReferralError("");
+    setShowReferralForm(false);
+    loadHistory(selected.id);
+    printReferralLetter(data);
+  }
+
+  function printReferralLetter(referral) {
+    const consultRows = history
+      .slice(0, 3)
+      .map((c) => `<li>${c.created_at?.slice(0, 10)} — ${c.diagnosis}${c.notes ? ": " + c.notes : ""}</li>`)
+      .join("");
+    const html = `
+      <!doctype html><html><head><meta charset="utf-8" /><title>Referral letter — ${selected.name}</title>
+      <style>
+        body { font-family: Arial, sans-serif; color: #1E2A30; padding: 40px; max-width: 640px; margin: 0 auto; }
+        h1 { font-size: 20px; margin: 0 0 4px; }
+        .sub { color: #5B6B72; font-size: 13px; margin-bottom: 24px; }
+        .row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px; }
+        .urgency { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: bold; background: #A13D3D1A; color: #A13D3D; }
+        ul { font-size: 13px; padding-left: 18px; }
+        .footer { margin-top: 32px; font-size: 11px; color: #7C8A90; text-align: center; }
+      </style></head>
+      <body>
+        <h1>Palani Medical Clinic</h1>
+        <div class="sub">Referral letter · ${referral.code}</div>
+        <div class="row"><span>To</span><strong>${referral.facility_name}</strong></div>
+        <div class="row"><span>Patient</span><strong>${selected.name} (${selected.code})</strong></div>
+        <div class="row"><span>DOB / Gender</span><strong>${selected.dob} · ${selected.gender}</strong></div>
+        <div class="row"><span>Referring doctor</span><strong>${staff.name}</strong></div>
+        <div class="row"><span>Urgency</span><span class="urgency">${referral.urgency}</span></div>
+        <p style="font-size:13px"><strong>Reason for referral:</strong><br/>${referral.reason}</p>
+        ${referral.notes ? `<p style="font-size:13px"><strong>Additional notes:</strong><br/>${referral.notes}</p>` : ""}
+        <p style="font-size:13px"><strong>Recent consultation history:</strong></p>
+        <ul>${consultRows || "<li>None recorded</li>"}</ul>
+        <div class="footer">Palani Medical Clinic — ${new Date().toISOString().slice(0, 10)}</div>
+      </body></html>`;
+    const win = window.open("", "_blank");
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    win.print();
+  }
+
   function selectPatient(id) {
     setSelectedId(id);
     setDiagnosis("");
@@ -116,6 +195,8 @@ export default function DoctorDashboard({ staff, onLogout }) {
     setSavedMsg("");
     setFollowUpTargetId(null);
     setFollowUpError("");
+    setShowReferralForm(false);
+    setReferralError("");
     loadHistory(id);
   }
 
@@ -348,6 +429,65 @@ export default function DoctorDashboard({ staff, onLogout }) {
                     <button className="wl-btn" onClick={admitPatient} style={{ background: "#A13D3D", color: "#fff", whiteSpace: "nowrap" }}>
                       Admit to ward
                     </button>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 18, marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Send size={15} color="#7C5CBF" />
+                    <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 14, margin: 0 }}>Referrals</h3>
+                  </div>
+                  {!showReferralForm && (
+                    <button className="wl-btn" onClick={() => setShowReferralForm(true)} style={{ background: "#7C5CBF", color: "#fff", fontSize: 12, padding: "6px 10px" }}>
+                      Refer to another facility
+                    </button>
+                  )}
+                </div>
+
+                {showReferralForm && (
+                  <form onSubmit={submitReferral} className="wl-fade-in" style={{ marginBottom: 12 }}>
+                    <div className="wl-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                      <input className="wl-input" value={referralForm.facility_name} onChange={(e) => setReferralForm({ ...referralForm, facility_name: e.target.value })} placeholder="Facility name" />
+                      <input className="wl-input" value={referralForm.referring_doctor} onChange={(e) => setReferralForm({ ...referralForm, referring_doctor: e.target.value })} placeholder="Receiving doctor (optional)" />
+                    </div>
+                    <textarea className="wl-input" value={referralForm.reason} onChange={(e) => setReferralForm({ ...referralForm, reason: e.target.value })} placeholder="Reason for referral" rows={2} style={{ marginBottom: 8, resize: "vertical" }} />
+                    <div className="wl-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 8, marginBottom: 8 }}>
+                      <select className="wl-input" value={referralForm.urgency} onChange={(e) => setReferralForm({ ...referralForm, urgency: e.target.value })}>
+                        <option>Routine</option>
+                        <option>Urgent</option>
+                        <option>Emergency</option>
+                      </select>
+                      <input className="wl-input" value={referralForm.notes} onChange={(e) => setReferralForm({ ...referralForm, notes: e.target.value })} placeholder="Additional notes (optional)" />
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <button className="wl-btn" type="submit" style={{ background: "#7C5CBF", color: "#fff", fontSize: 12 }}>Save and print letter</button>
+                      <button type="button" className="wl-btn" onClick={() => { setShowReferralForm(false); setReferralError(""); }} style={{ background: "#F5F7F8", color: "#5B6B72", fontSize: 12 }}>Cancel</button>
+                      {referralError && (
+                        <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#A13D3D", fontSize: 12 }}>
+                          <AlertCircle size={13} /> {referralError}
+                        </span>
+                      )}
+                    </div>
+                  </form>
+                )}
+
+                {referrals.length === 0 ? (
+                  <p style={{ fontSize: 12, color: "#7C8A90", margin: 0 }}>No referrals recorded for this patient.</p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {referrals.map((r) => (
+                      <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "#5B6B72" }}>
+                        <span>
+                          <span className="wl-badge" style={{ marginRight: 8, background: r.direction === "Outgoing" ? "#7C5CBF1A" : "#3D6FB41A", color: r.direction === "Outgoing" ? "#7C5CBF" : "#3D6FB4" }}>
+                            {r.direction}
+                          </span>
+                          <strong style={{ color: "#1E2A30" }}>{r.facility_name}</strong> — {r.reason}
+                        </span>
+                        <span style={{ color: "#7C8A90" }}>{r.created_at?.slice(0, 10)}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

@@ -1,9 +1,17 @@
 import { useEffect, useState } from "react";
 import { X, FileText, HeartPulse, FlaskConical, BedDouble, Receipt, Printer } from "lucide-react";
 import { supabase } from "../supabaseClient";
+import { escapeHtml, printDocument } from "../utils/print";
 
-export default function PatientRecord({ patient, onClose }) {
+export default function PatientRecord(props) {
+  return <PatientRecordContent key={props.patient.id} {...props} />;
+}
+
+function PatientRecordContent({ patient, onClose }) {
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [printError, setPrintError] = useState("");
+  const [retry, setRetry] = useState(0);
   const [consultations, setConsultations] = useState([]);
   const [vitals, setVitals] = useState([]);
   const [labs, setLabs] = useState([]);
@@ -11,50 +19,64 @@ export default function PatientRecord({ patient, onClose }) {
   const [invoices, setInvoices] = useState([]);
 
   useEffect(() => {
+    let disposed = false;
     (async () => {
       setLoading(true);
-      const [{ data: c }, { data: v }, { data: l }, { data: a }, { data: inv }] = await Promise.all([
-        supabase.from("consultations").select("*, prescriptions(*)").eq("patient_id", patient.id).order("created_at", { ascending: false }),
-        supabase.from("vitals").select("*").eq("patient_id", patient.id).order("recorded_at", { ascending: false }),
-        supabase.from("lab_orders").select("*").eq("patient_id", patient.id).order("ordered_at", { ascending: false }),
-        supabase.from("admissions").select("*").eq("patient_id", patient.id).order("admitted_at", { ascending: false }),
-        supabase.from("invoices").select("*").eq("patient_id", patient.id).order("created_at", { ascending: false }),
-      ]);
-      setConsultations(c || []);
-      setVitals(v || []);
-      setLabs(l || []);
-      setAdmissions(a || []);
-      setInvoices(inv || []);
-      setLoading(false);
+      setLoadError("");
+      setPrintError("");
+      try {
+        const results = await Promise.all([
+          supabase.from("consultations").select("*, prescriptions(*)").eq("patient_id", patient.id).order("created_at", { ascending: false }),
+          supabase.from("vitals").select("*").eq("patient_id", patient.id).order("recorded_at", { ascending: false }),
+          supabase.from("lab_orders").select("*").eq("patient_id", patient.id).order("ordered_at", { ascending: false }),
+          supabase.from("admissions").select("*").eq("patient_id", patient.id).order("admitted_at", { ascending: false }),
+          supabase.from("invoices").select("*").eq("patient_id", patient.id).order("created_at", { ascending: false }),
+        ]);
+        if (disposed) return;
+        if (results.some((result) => result.error || !Array.isArray(result.data))) throw new Error("unavailable");
+        const [c, v, l, a, inv] = results.map((result) => result.data);
+        setConsultations(c);
+        setVitals(v);
+        setLabs(l);
+        setAdmissions(a);
+        setInvoices(inv);
+      } catch {
+        if (!disposed) setLoadError("Patient history could not be fully loaded. Retry before using or printing this summary.");
+      } finally {
+        if (!disposed) setLoading(false);
+      }
     })();
-  }, [patient.id]);
+    return () => { disposed = true; };
+  }, [patient.id, retry]);
 
   function printSummary() {
+    if (loading || loadError) return;
+    setPrintError("");
     const consultRows = consultations
       .map(
         (c) => `
       <div class="entry">
-        <div class="entry-head"><strong>${c.diagnosis}</strong><span>${c.created_at?.slice(0, 10)}</span></div>
-        ${c.notes ? `<p>${c.notes}</p>` : ""}
-        ${c.prescriptions?.length ? `<ul>${c.prescriptions.map((p) => `<li>${p.drug} ${p.dosage || ""} ${p.dispensed ? "(dispensed)" : "(pending)"}</li>`).join("")}</ul>` : ""}
+        <div class="entry-head"><strong>${escapeHtml(c.diagnosis)}</strong><span>${escapeHtml(c.created_at?.slice(0, 10))}</span></div>
+        ${c.notes ? `<p>${escapeHtml(c.notes)}</p>` : ""}
+        ${c.prescriptions?.length ? `<ul>${c.prescriptions.map((p) => `<li>${escapeHtml(p.drug)} ${escapeHtml(p.dosage || "")} ${p.dispensed ? "(dispensed)" : "(pending)"}</li>`).join("")}</ul>` : ""}
       </div>`
       )
       .join("");
 
     const vitalsRows = vitals
-      .map((v) => `<tr><td>${v.recorded_at?.slice(0, 10)}</td><td>${v.bp || "—"}</td><td>${v.temperature || "—"}</td><td>${v.pulse || "—"}</td><td>${v.weight || "—"}</td></tr>`)
+      .map((v) => `<tr><td>${escapeHtml(v.recorded_at?.slice(0, 10))}</td><td>${escapeHtml(v.bp || "—")}</td><td>${escapeHtml(v.temperature || "—")}</td><td>${escapeHtml(v.pulse || "—")}</td><td>${escapeHtml(v.weight || "—")}</td></tr>`)
       .join("");
 
     const labRows = labs
-      .map((l) => `<tr><td>${l.test_name}</td><td>${l.status}</td><td>${l.result || "—"}</td><td>${l.ordered_at?.slice(0, 10)}</td></tr>`)
+      .map((l) => `<tr><td>${escapeHtml(l.test_name)}</td><td>${escapeHtml(l.status)}</td><td>${escapeHtml(l.result || "—")}</td><td>${escapeHtml(l.ordered_at?.slice(0, 10))}</td></tr>`)
       .join("");
 
     const invoiceRows = invoices
-      .map((i) => `<tr><td>${i.code}</td><td>${i.created_at?.slice(0, 10)}</td><td>KES ${Number(i.total).toLocaleString()}</td><td>${i.status}</td></tr>`)
+      .map((i) => `<tr><td>${escapeHtml(i.code)}</td><td>${escapeHtml(i.created_at?.slice(0, 10))}</td><td>KES ${Number(i.total).toLocaleString()}</td><td>${escapeHtml(i.status)}</td></tr>`)
       .join("");
 
     const html = `
-      <!doctype html><html><head><meta charset="utf-8" /><title>${patient.name} — Patient Summary</title>
+      <!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(patient.name)} — Patient Summary</title>
       <style>
         body { font-family: Arial, sans-serif; color: #1E2A30; padding: 40px; max-width: 700px; margin: 0 auto; }
         h1 { font-size: 20px; margin: 0 0 4px; }
@@ -68,8 +90,8 @@ export default function PatientRecord({ patient, onClose }) {
       </style></head>
       <body>
         <h1>Palani Medical Clinic</h1>
-        <div class="sub">Patient summary — ${patient.name} (${patient.code})</div>
-        <p style="font-size:13px">${patient.gender} · DOB ${patient.dob} · ${patient.phone}</p>
+        <div class="sub">Patient summary — ${escapeHtml(patient.name)} (${escapeHtml(patient.code)})</div>
+        <p style="font-size:13px">${escapeHtml(patient.gender)} · DOB ${escapeHtml(patient.dob)} · ${escapeHtml(patient.phone)}</p>
 
         <h2>Consultations</h2>
         ${consultRows || "<p style='font-size:12px;color:#7C8A90'>None recorded.</p>"}
@@ -84,11 +106,7 @@ export default function PatientRecord({ patient, onClose }) {
         <table><thead><tr><th>Code</th><th>Date</th><th>Total</th><th>Status</th></tr></thead><tbody>${invoiceRows || ""}</tbody></table>
       </body></html>`;
 
-    const win = window.open("", "_blank");
-    win.document.write(html);
-    win.document.close();
-    win.focus();
-    win.print();
+    if (!printDocument(html)) setPrintError("Allow pop-ups to print this summary.");
   }
 
   return (
@@ -109,7 +127,7 @@ export default function PatientRecord({ patient, onClose }) {
             </p>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
-            <button className="wl-btn icon-btn" onClick={printSummary} aria-label="Print summary" title="Print full summary">
+            <button className="wl-btn icon-btn" onClick={printSummary} disabled={loading || !!loadError} aria-label="Print summary" title="Print full summary">
               <Printer size={16} color="#5B6B72" />
             </button>
             <button className="wl-btn icon-btn" onClick={onClose} aria-label="Close" title="Close">
@@ -118,8 +136,14 @@ export default function PatientRecord({ patient, onClose }) {
           </div>
         </div>
 
+        {printError && <p role="alert">{printError}</p>}
         {loading ? (
           <div style={{ padding: 24, textAlign: "center", color: "#7C8A90", fontSize: 13 }}>Loading patient record…</div>
+        ) : loadError ? (
+          <div role="alert">
+            <p>{loadError}</p>
+            <button className="wl-btn" onClick={() => setRetry((value) => value + 1)}>Retry patient history</button>
+          </div>
         ) : (
           <>
             {admissions.some((a) => a.status === "Admitted") && (

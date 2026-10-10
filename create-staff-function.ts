@@ -28,11 +28,11 @@ Deno.serve(async (req) => {
 
     const { data: callerStaff } = await callerClient
       .from("staff")
-      .select("role")
+      .select("role, active")
       .eq("id", caller.id)
       .single();
 
-    if (!callerStaff || callerStaff.role !== "Admin") {
+    if (!callerStaff || callerStaff.role !== "Admin" || callerStaff.active !== true) {
       return new Response(JSON.stringify({ error: "Only an Admin can create staff accounts." }), { status: 403 });
     }
 

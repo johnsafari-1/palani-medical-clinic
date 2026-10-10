@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
+import { ROLES } from "./constants";
 import LoginScreen from "./components/LoginScreen";
 import AdminDashboard from "./components/AdminDashboard";
 import ReceptionistDashboard from "./components/ReceptionistDashboard";
@@ -9,91 +10,99 @@ import LabDashboard from "./components/LabDashboard";
 import PharmacyDashboard from "./components/PharmacyDashboard";
 import CashierDashboard from "./components/CashierDashboard";
 
-export default function App() {
-  const [session, setSession] = useState(undefined); // undefined = loading, null = signed out
-  const [staff, setStaff] = useState(null);
-  const [staffError, setStaffError] = useState("");
+const dashboards = { Admin: AdminDashboard, Receptionist: ReceptionistDashboard, Doctor: DoctorDashboard,
+  Nurse: NurseDashboard, "Lab Technician": LabDashboard, Pharmacist: PharmacyDashboard, Cashier: CashierDashboard };
+const accessErrors = {
+  inactive: "This account has been deactivated. Contact your administrator.",
+  role: "This account has no supported staff role. Contact your administrator.",
+  unavailable: "Unable to verify your staff access. Contact your administrator or sign in again.",
+};
 
+function AccessMessage({ children, onLogout }) {
+  return <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
+    <p role="status">{children}</p>
+    {onLogout && <button className="wl-btn" onClick={onLogout}>Back to sign in</button>}
+  </div>;
+}
+
+// Keyed by identity AND token: account changes immediately unmount all previous
+// patient state, before the next profile request completes.
+export function StaffSession({ session, onLogout }) {
+  const [staff, setStaff] = useState(null);
+  const [error, setError] = useState("");
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    let disposed = false;
+    let generation = 0;
+    async function checkAccess() {
+      const request = ++generation;
+      try {
+        const { data, error: profileError } = await supabase.from("staff")
+          .select("*").eq("id", session.user.id).single();
+        if (disposed || request !== generation) return;
+        let denial = "";
+        if (profileError || !data || data.id !== session.user.id) denial = accessErrors.unavailable;
+        else if (data.active === false) denial = accessErrors.inactive;
+        else if (!ROLES.some((role) => role.key === data.role)) denial = accessErrors.role;
+        setStaff(denial ? null : data);
+        setError(denial);
+      } catch {
+        if (disposed || request !== generation) return;
+        setStaff(null);
+        setError(accessErrors.unavailable);
+      }
+    }
+    checkAccess();
+    const interval = window.setInterval(checkAccess, 60_000);
+    window.addEventListener("focus", checkAccess);
+    return () => {
+      disposed = true;
+      ++generation;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", checkAccess);
+    };
+  }, [session.user.id]);
+
+  if (error) return <AccessMessage onLogout={onLogout}>{error}</AccessMessage>;
+  if (!staff) return <AccessMessage>Verifying your staff access…</AccessMessage>;
+  const Dashboard = dashboards[staff.role];
+  return <Dashboard key={`${staff.id}:${staff.role}`} staff={staff} onLogout={onLogout} />;
+}
+
+export default function App() {
+  const [session, setSession] = useState(undefined);
+  const [sessionError, setSessionError] = useState("");
+  useEffect(() => {
+    let disposed = false;
+    let authEventReceived = false;
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
+      authEventReceived = true;
+      if (!disposed) { setSessionError(""); setSession(newSession); }
     });
-    return () => listener.subscription.unsubscribe();
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (disposed || authEventReceived) return;
+      if (error) setSessionError("Unable to restore your session. Please sign in again.");
+      setSession(error ? null : data.session);
+    }).catch(() => {
+      if (disposed || authEventReceived) return;
+      setSessionError("Unable to restore your session. Please sign in again.");
+      setSession(null);
+    });
+    return () => { disposed = true; listener.subscription.unsubscribe(); };
   }, []);
 
-  useEffect(() => {
-    if (!session) {
-      setStaff(null);
-      return;
-    }
-    (async () => {
-      const { data, error } = await supabase
-        .from("staff")
-        .select("*")
-        .eq("id", session.user.id)
-        .single();
-      if (error) {
-        setStaffError("Signed in, but no staff profile found for this account. Ask an Admin to add you.");
-      } else if (data.active === false) {
-        setStaffError("This account has been deactivated. Contact your Admin.");
-        await supabase.auth.signOut();
-      } else {
-        setStaff(data);
-        setStaffError("");
-      }
-    })();
-  }, [session]);
-
   async function handleLogout() {
-    await supabase.auth.signOut();
+    // Remove clinical UI even if the network sign-out request fails.
+    setSession(null);
+    setSessionError("");
+    try {
+      const { error } = await supabase.auth.signOut({ scope: "local" });
+      if (error) throw error;
+    } catch {
+      setSessionError("Sign-out could not be completed. Close this browser and contact your administrator.");
+    }
   }
-
-  if (session === undefined) {
-    return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Inter, sans-serif", color: "#5B6B72" }}>
-        Loading Palani Medical Clinic…
-      </div>
-    );
-  }
-
-  if (!session && !staffError) {
-    return <LoginScreen />;
-  }
-
-  if (staffError) {
-    return (
-      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "Inter, sans-serif", gap: 16 }}>
-        <p style={{ color: "#A13D3D" }}>{staffError}</p>
-        <button className="wl-btn" onClick={() => { setStaffError(""); handleLogout(); }} style={{ background: "#2B6777", color: "#fff" }}>Back to sign in</button>
-      </div>
-    );
-  }
-
-  if (!staff) {
-    return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Inter, sans-serif", color: "#5B6B72" }}>
-        Loading your dashboard…
-      </div>
-    );
-  }
-
-  switch (staff.role) {
-    case "Admin":
-      return <AdminDashboard staff={staff} onLogout={handleLogout} />;
-    case "Receptionist":
-      return <ReceptionistDashboard staff={staff} onLogout={handleLogout} />;
-    case "Doctor":
-      return <DoctorDashboard staff={staff} onLogout={handleLogout} />;
-    case "Nurse":
-      return <NurseDashboard staff={staff} onLogout={handleLogout} />;
-    case "Lab Technician":
-      return <LabDashboard staff={staff} onLogout={handleLogout} />;
-    case "Pharmacist":
-      return <PharmacyDashboard staff={staff} onLogout={handleLogout} />;
-    case "Cashier":
-      return <CashierDashboard staff={staff} onLogout={handleLogout} />;
-    default:
-      return <p>Unknown role.</p>;
-  }
+  if (sessionError) return <AccessMessage onLogout={() => setSessionError("")}>{sessionError}</AccessMessage>;
+  if (session === undefined) return <AccessMessage>Loading Palani Medical Clinic…</AccessMessage>;
+  if (!session) return <LoginScreen />;
+  return <StaffSession key={`${session.user.id}:${session.access_token}`} session={session} onLogout={handleLogout} />;
 }

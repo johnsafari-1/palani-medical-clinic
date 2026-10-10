@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Printer, ShoppingBag } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import Header from "./Header";
+import { escapeHtml, printDocument } from "../utils/print";
 
 const CATEGORY_FOR_LINE = { consult: "Consultation", room: "Room" };
 
@@ -13,6 +14,7 @@ export default function CashierDashboard({ staff, onLogout }) {
   const [patients, setPatients] = useState([]);
   const [pendingLabs, setPendingLabs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [printError, setPrintError] = useState("");
   const [billing, setBilling] = useState(null);
   const [lines, setLines] = useState([]);
   const [payMethodTarget, setPayMethodTarget] = useState(null);
@@ -214,13 +216,27 @@ export default function CashierDashboard({ staff, onLogout }) {
   }
 
   async function printReceipt(inv) {
-    const { data: items } = await supabase.from("invoice_items").select("*").eq("invoice_id", inv.id);
+    setPrintError("");
+    // Open during the user gesture, before awaiting I/O, to avoid popup blocking.
+    const popup = window.open("", "_blank");
+    if (!popup) { setPrintError("Allow pop-ups to print this receipt."); return; }
+    popup.opener = null;
+    let items;
+    try {
+      const result = await supabase.from("invoice_items").select("*").eq("invoice_id", inv.id);
+      if (result.error || !Array.isArray(result.data)) throw new Error("unavailable");
+      items = result.data;
+    } catch {
+      popup.close();
+      setPrintError("Receipt items could not be loaded. Retry before printing.");
+      return;
+    }
     const rows = (items || [])
       .map(
         (it) => `
         <tr>
-          <td>${it.label}</td>
-          <td style="text-align:center">${it.quantity}</td>
+          <td>${escapeHtml(it.label)}</td>
+          <td style="text-align:center">${escapeHtml(it.quantity)}</td>
           <td style="text-align:right">${it.unit_price != null ? "KES " + Number(it.unit_price).toLocaleString() : "—"}</td>
           <td style="text-align:right">KES ${Number(it.amount).toLocaleString()}</td>
         </tr>`
@@ -232,7 +248,7 @@ export default function CashierDashboard({ staff, onLogout }) {
       <html>
       <head>
         <meta charset="utf-8" />
-        <title>Receipt ${inv.code}</title>
+        <title>Receipt ${escapeHtml(inv.code)}</title>
         <style>
           body { font-family: Arial, sans-serif; color: #1E2A30; padding: 40px; max-width: 640px; margin: 0 auto; }
           h1 { font-size: 20px; margin: 0 0 4px; }
@@ -248,31 +264,28 @@ export default function CashierDashboard({ staff, onLogout }) {
       </head>
       <body>
         <h1>Palani Medical Clinic</h1>
-        <div class="sub">Receipt · ${inv.code}${inv.sale_type === "OTC" ? " · Over-the-counter sale" : ""}</div>
-        <div class="row"><span>Patient</span><strong>${inv.patients?.name || ""}</strong></div>
-        <div class="row"><span>Patient ID</span><strong>${inv.patients?.code || ""}</strong></div>
-        <div class="row"><span>Date</span><strong>${inv.created_at?.slice(0, 10)}</strong></div>
-        ${inv.payment_method ? `<div class="row"><span>Payment method</span><strong>${inv.payment_method}</strong></div>` : ""}
+        <div class="sub">Receipt · ${escapeHtml(inv.code)}${inv.sale_type === "OTC" ? " · Over-the-counter sale" : ""}</div>
+        <div class="row"><span>Patient</span><strong>${escapeHtml(inv.patients?.name || "")}</strong></div>
+        <div class="row"><span>Patient ID</span><strong>${escapeHtml(inv.patients?.code || "")}</strong></div>
+        <div class="row"><span>Date</span><strong>${escapeHtml(inv.created_at?.slice(0, 10))}</strong></div>
+        ${inv.payment_method ? `<div class="row"><span>Payment method</span><strong>${escapeHtml(inv.payment_method)}</strong></div>` : ""}
         <table>
           <thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Unit price</th><th style="text-align:right">Amount</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
         <div class="total"><span>Total</span><span>KES ${Number(inv.total).toLocaleString()}</span></div>
-        <span class="status">${inv.status}</span>
+        <span class="status">${escapeHtml(inv.status)}</span>
         <div class="footer">Thank you for visiting Palani Medical Clinic.</div>
       </body>
       </html>`;
 
-    const win = window.open("", "_blank");
-    win.document.write(html);
-    win.document.close();
-    win.focus();
-    win.print();
+    printDocument(html, popup);
   }
 
   return (
     <div>
       <Header staff={staff} onLogout={onLogout} />
+      {printError && <p role="alert" style={{ padding: "0 32px", color: "#A13D3D" }}>{printError}</p>}
       <div className="wl-page" style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
           <h2 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 18, margin: 0 }}>Billing</h2>

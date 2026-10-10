@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, AlertCircle, KeyRound, Ban, RotateCcw, Check, X } from "lucide-react";
+import { Plus, AlertCircle, KeyRound, Ban, RotateCcw, Check, X } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { ROLES, roleMeta } from "../constants";
 import Header from "./Header";
@@ -68,7 +68,7 @@ export default function AdminDashboard({ staff, onLogout }) {
   async function toggleActive(u) {
     setActionError("");
     setBusyId(u.id);
-    const { data, error } = await callStaffFunction(u.active ? "deactivate" : "reactivate", { staffId: u.id });
+    const { data, error } = await callStaffFunction(u.active === false ? "reactivate" : "deactivate", { staffId: u.id });
     setBusyId(null);
     if (error || data?.error) {
       setActionError(data?.error || error.message || "Could not update this account.");
@@ -91,14 +91,6 @@ export default function AdminDashboard({ staff, onLogout }) {
     setNewPassword("");
   }
 
-  async function removeStaff(id) {
-    // This only removes the app-level staff row (their dashboard access
-    // and data association). Their login itself is handled separately —
-    // deactivate it first using the button above if you want to fully
-    // block sign-in, since this alone does not delete their credentials.
-    await supabase.from("staff").delete().eq("id", id);
-    loadStaff();
-  }
 
   return (
     <div>
@@ -170,7 +162,7 @@ export default function AdminDashboard({ staff, onLogout }) {
             </div>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Password</label>
-              <input className="wl-input" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Temporary password" />
+              <input className="wl-input" type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Temporary password" />
             </div>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Role</label>
@@ -235,9 +227,6 @@ export default function AdminDashboard({ staff, onLogout }) {
                         >
                           {u.active === false ? <RotateCcw size={15} color="#2F7D4F" /> : <Ban size={15} color="#C77D2E" />}
                         </button>
-                        <button className="wl-btn icon-btn danger" onClick={() => removeStaff(u.id)} style={{ color: "#A13D3D" }} aria-label="Remove staff" title="Remove from staff list (does not delete login)">
-                          <Trash2 size={15} />
-                        </button>
                       </div>
                     )}
                   </div>
@@ -245,7 +234,8 @@ export default function AdminDashboard({ staff, onLogout }) {
                     <div className="wl-fade-in" style={{ display: "flex", gap: 8, marginTop: 10 }}>
                       <input
                         className="wl-input"
-                        type="text"
+                        type="password"
+                        autoComplete="new-password"
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
                         placeholder="New password"

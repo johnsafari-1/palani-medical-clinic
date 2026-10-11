@@ -4,6 +4,8 @@ A React/Vite clinic workflow prototype using Supabase Auth, PostgreSQL Row Level
 
 ## Run locally
 
+Use Node.js 22.12+ or Node.js 24 LTS for the pinned build/test tools.
+
 ```powershell
 cd C:\palani-app
 npm ci
@@ -75,3 +77,9 @@ The Supabase policy and Edge Function changes are live. The frontend route chang
 ## Scope
 
 Use test data while the prototype is developed. Auth and RLS protections alone do not establish healthcare compliance or production readiness. Broader audit coverage, clinical data permissions, workflow integrity, and operational controls need separate review.
+
+## Clinical integrity changes
+
+The doctor screen now uses `save_clinical_consultation` to save the consultation, prescriptions, lab orders and selected visit completion atomically. Drafts are retained on failure, and retries use the same request ID until confirmed. Patient-history failures block clinical changes instead of appearing as empty records.
+
+The additive migration `supabase/migrations/20261011054404_atomic_clinical_records.sql` also expands audit coverage and removes browser TRUNCATE/audit-write privileges. **It is prepared, not applied to Supabase. Apply and verify it before deploying this frontend.** See [deployment, rollback and remaining compliance work](docs/CLINICAL_INTEGRITY.md). A compatibility rollback and post-deployment SQL checks are included.

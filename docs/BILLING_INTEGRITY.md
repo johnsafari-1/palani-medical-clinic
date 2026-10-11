@@ -28,7 +28,9 @@ Retry state exists only in the mounted screen. Reload, logout or closing the pag
 
 ## Deployment and recovery
 
-The prepared migration is `supabase/migrations/20261011063217_atomic_billing.sql`. All 244 local tests, the production build and the full dependency audit pass, including the non-destructive rollback and hosted SQL script against the schema fixture. The migration tool failed twice with `Invalid or expired requestState`; hosted migration history and schema checks confirmed the billing migration was not applied. No alternative write path was used. Hosted application and authenticated browser verification are pending. The frontend is on `feature/atomic-billing`; apply and verify the database migration before merging/deploying the frontend.
+The billing migration was applied to the hosted test project on 11 October 2026 as version `20261011104648` (`atomic_billing`). The repository file `supabase/migrations/20261011104648_atomic_billing.sql` matches that hosted version and SQL; it was renamed from the earlier prepared filename to avoid replaying it as a pending migration. The earlier migration-tool request-state error was resolved on a later authorized attempt.
+
+All 248 tests pass with the merged UI changes, along with the production build and diff checks. Hosted billing, clinical-record, order-completion and staff-access SQL checks pass using transaction-scoped synthetic fixtures that were rolled back. Security Advisors reports only the previously deferred leaked-password-protection warning. Authenticated browser and visual checks remain pending; the local browser download failed. The user authorized merging the commits with this limitation disclosed.
 
 If recovery is needed, revert the Cashier frontend first, then use `supabase/rollback/atomic_billing.sql`. It revokes browser execution of the new RPCs, removes invoice/line guards and pharmacy-own-read policies, and restores the prior billing trigger. All invoices, lines, payments, audit history, added columns and the request-ID index remain. The rollback is tested locally; it is not a backup or a verified production restore point.
 

@@ -23,7 +23,7 @@ beforeAll(async()=>{
   await db.exec(read("../migrations/20261011044601_enforce_active_staff_access.sql"));
   await db.exec(read("../migrations/20261011060200_atomic_clinical_records.sql"));
   await db.exec(migration);
-  await db.exec(read("../migrations/20261011063217_atomic_billing.sql"));
+  await db.exec(read("../migrations/20261011104648_atomic_billing.sql"));
 },30000);
 beforeEach(async()=>{
   await db.exec("begin");

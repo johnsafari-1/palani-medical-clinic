@@ -26,7 +26,7 @@ function DashboardHome() {
 
 function Dashboard({ component: Component }) {
   const { staff, signOut } = useAuth();
-  return <Component key={staff.id} staff={staff} onLogout={signOut} />;
+  return <div className="clinic-workspace"><Component key={staff.id} staff={staff} onLogout={signOut} /></div>;
 }
 
 export function AppRoutes() {

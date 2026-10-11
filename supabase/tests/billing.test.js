@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 import { beforeAll, beforeEach, afterAll, afterEach, describe, it, expect } from 'vitest';
 const read=name=>readFileSync(new URL(name,import.meta.url),'utf8');
-const migration=read('../migrations/20261011063217_atomic_billing.sql');
+const migration=read('../migrations/20261011104648_atomic_billing.sql');
 let db, patient, otherPatient, consultation, otherConsultation, admission, rx, lab, price, medicine, labPrice, actor;
 async function role(name,active=true){
   await db.exec('reset role'); const id=randomUUID();

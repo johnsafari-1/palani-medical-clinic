@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Search, User, AlertCircle, Clock } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import Header from "./Header";
+import AllergyPanel from "./AllergyPanel";
 import { createVitalsSubmission, emptyVitals, vitalsPayload } from "../clinical/vitalsSubmission";
 
 export default function NurseDashboard({ staff, onLogout }) {
@@ -181,6 +182,8 @@ export default function NurseDashboard({ staff, onLogout }) {
                   <div style={{ fontSize: 12, color: "#7C8A90" }}>{selected.gender} · DOB {selected.dob} · <span style={{ fontFamily: "IBM Plex Mono, monospace" }}>{selected.code}</span></div>
                 </div>
               </div>
+
+              <AllergyPanel patientId={selected.id} staff={staff} readOnly />
 
               <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 20, marginBottom: 16 }}>
                 <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 15, margin: "0 0 14px" }}>Log vitals</h3>

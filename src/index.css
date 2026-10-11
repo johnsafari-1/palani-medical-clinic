@@ -81,6 +81,16 @@ button, input, select, textarea { font: inherit; }
 .clinic-patient-choice { display: block; width: 100%; border: 0; font: inherit; text-align: left; }
 .clinic-patient-choice:disabled { cursor: not-allowed !important; opacity: 0.65; }
 .clinic-patient-choice:focus-visible { outline: 3px solid #2B6777; outline-offset: -3px; }
+.clinic-allergy-panel { background: #fff; border: 1px solid #dce3e6; border-left: 4px solid #b07c32; border-radius: 12px; padding: 18px; margin-bottom: 16px; overflow-wrap: anywhere; }
+.clinic-allergy-panel h3 { margin: 0; font-size: 15px; }
+.clinic-allergy-panel p { font-size: 13px; line-height: 1.6; }
+.clinic-allergy-meta { color: #5b6b72; font-size: 12px !important; }
+.clinic-allergy-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.clinic-allergy-panel fieldset { border: 0; margin: 12px 0; padding: 0; min-width: 0; }
+.clinic-allergy-panel label { display: block; font-size: 12px; font-weight: 600; margin: 10px 0; }
+.clinic-allergy-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 12px; }
+.clinic-allergy-entry { padding: 12px 0; border-top: 1px solid #dce3e6; margin-top: 12px; }
+.clinic-allergy-panel summary { cursor: pointer; margin-top: 16px; font-size: 13px; }
 
 /* ---------- Role directory cards on the login screen ---------- */
 .wl-role-card {

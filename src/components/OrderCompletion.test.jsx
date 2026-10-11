@@ -7,21 +7,34 @@ import { useClinicalQueue } from "../clinical/useClinicalQueue";
 import { supabase } from "../supabaseClient";
 vi.mock("../supabaseClient",()=>({supabase:{from:vi.fn(),rpc:vi.fn()}}));
 vi.mock("./Header",()=>({default:()=> <header>Clinical dashboard</header>}));
-const prescription={id:"rx",drug:"Synthetic medicine",dosage:"Test dose",instructions:"Test instructions",dispensed:false,consultations:{patients:{name:"Synthetic patient",code:"PT-TEST"}}};
+const prescription={id:"rx",drug:"Synthetic medicine",dosage:"Test dose",instructions:"Test instructions",dispensed:false,consultations:{patient_id:"00000000-0000-4000-8000-000000000001",patients:{name:"Synthetic patient",code:"PT-TEST"}}};
 const lab={id:"lab",test_name:"Synthetic lab",status:"Pending",code:"LB-TEST",patients:{name:"Synthetic patient",code:"PT-TEST"}};
 const staff={id:"staff",name:"Synthetic staff",role:"Admin"};
 const defer=()=>{let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};};
-let response;
+let response, allergyFailure;
 beforeEach(()=>{
-  response=null;supabase.rpc.mockReset();
-  supabase.from.mockImplementation(table=>({select:()=>({order:()=>response || Promise.resolve({data:[table==="prescriptions"?prescription:lab],error:null})})}));
+  response=null;allergyFailure=false;supabase.rpc.mockReset();
+  supabase.from.mockImplementation(table=>{
+    const query={select:()=>query,eq:()=>query,order:()=>query,limit:()=>query,
+      then:(resolve,reject)=>(table==="patient_allergy_reviews" ? Promise.resolve(allergyFailure?{data:null,error:{message:"Unavailable"}}:{data:[],error:null}) : response || Promise.resolve({data:[table==="prescriptions"?prescription:lab],error:null})).then(resolve,reject)};
+    return query;
+  });
 });
 afterEach(cleanup);
 describe("pharmacy completion",()=>{
+  it("blocks dispensing on unavailable allergy history and enables it after a successful refresh",async()=>{
+    allergyFailure=true;render(<PharmacyDashboard staff={staff}/>);
+    await screen.findByText("Allergy history unavailable. Retry before relying on this status.");
+    expect(screen.getByRole("button",{name:"Mark dispensed"}).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button",{name:"Mark dispensed"}));expect(supabase.rpc).not.toHaveBeenCalled();
+    allergyFailure=false;fireEvent.click(screen.getByRole("button",{name:"Refresh allergies"}));
+    await waitFor(()=>expect(screen.getByRole("button",{name:"Mark dispensed"}).disabled).toBe(false));
+  });
   it("records only confirmed dispensing and ignores duplicate clicks",async()=>{
     const pending=defer();supabase.rpc.mockReturnValue(pending.promise);
     render(<PharmacyDashboard staff={staff}/>);
     const button=await screen.findByRole("button",{name:"Mark dispensed"});
+    await waitFor(()=>expect(button.disabled).toBe(false));
     fireEvent.click(button);fireEvent.click(button);
     expect(supabase.rpc).toHaveBeenCalledTimes(1);
     expect(supabase.rpc).toHaveBeenCalledWith("dispense_prescription",{p_prescription_id:"rx"});
@@ -33,7 +46,8 @@ describe("pharmacy completion",()=>{
   it("keeps pending rows when a write fails",async()=>{
     supabase.rpc.mockResolvedValue({data:null,error:{code:"42501",message:"Synthetic permission failure"}});
     render(<PharmacyDashboard staff={staff}/>);
-    fireEvent.click(await screen.findByRole("button",{name:"Mark dispensed"}));
+    await waitFor(()=>expect(screen.getByRole("button",{name:"Mark dispensed"}).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button",{name:"Mark dispensed"}));
     expect(await screen.findByRole("alert")).toHaveProperty("textContent","Synthetic permission failure");
     expect(screen.getByRole("button",{name:"Mark dispensed"}).disabled).toBe(false);
     expect(screen.queryByText("Dispensing recorded.")).toBeNull();

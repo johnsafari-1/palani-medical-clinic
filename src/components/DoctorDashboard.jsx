@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Search, User, Plus, X, FileText, AlertCircle, HeartPulse, FlaskConical, BedDouble, Clock, Send, Printer } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import Header from "./Header";
+import AllergyPanel from "./AllergyPanel";
 import { createConsultationSubmission } from "../clinical/consultationSubmission";
 
 export default function DoctorDashboard({ staff, onLogout }) {
@@ -37,6 +38,9 @@ export default function DoctorDashboard({ staff, onLogout }) {
   const historyRequest = useRef(0);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
+  const [allergyAvailable, setAllergyAvailable] = useState(false);
+  const [allergyPending, setAllergyPending] = useState(false);
+  const allergyLock = useRef(false);
 
   useEffect(() => {
     supabase.from("patients").select("*").order("name").then(({ data }) => setPatients(data || []));
@@ -124,7 +128,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
   }
 
   async function admitPatient() {
-    if (!selected || saving || unconfirmedSave || historyLoading || historyError) return;
+    if (!selected || saving || unconfirmedSave || historyLoading || historyError || !allergyAvailable || allergyPending) return;
     const { error } = await supabase.from("admissions").insert({
       patient_id: selected.id,
       admitted_by: staff.id,
@@ -138,7 +142,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
   }
 
   async function dischargePatient() {
-    if (!admission || saving || unconfirmedSave || historyLoading || historyError) return;
+    if (!admission || saving || unconfirmedSave || historyLoading || historyError || !allergyAvailable || allergyPending) return;
     const { error } = await supabase
       .from("admissions")
       .update({ status: "Discharged", discharged_at: new Date().toISOString(), discharged_by: staff.id })
@@ -157,7 +161,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
 
   async function submitReferral(e) {
     e.preventDefault();
-    if (!selected || saving || unconfirmedSave || historyLoading || historyError) return;
+    if (!selected || saving || unconfirmedSave || historyLoading || historyError || !allergyAvailable || allergyPending) return;
     if (!referralForm.facility_name.trim() || !referralForm.reason.trim()) {
       setReferralError("Fill in the facility name and reason for referral.");
       return;
@@ -232,7 +236,9 @@ export default function DoctorDashboard({ staff, onLogout }) {
   }
 
   function selectPatient(id) {
-    if (saveLock.current || submission.current.hasPending()) return false;
+    if (saveLock.current || submission.current.hasPending() || allergyLock.current) return false;
+    setAllergyAvailable(false);
+    setAllergyPending(false);
     setSelectedVisitId(null);
     setSelectedId(id);
     setHistory([]);
@@ -274,7 +280,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
   }
 
   function startFollowUp(consultationId) {
-    if (saving || unconfirmedSave || historyLoading || historyError) return;
+    if (saving || unconfirmedSave || historyLoading || historyError || !allergyAvailable || allergyPending) return;
     setFollowUpTargetId(consultationId);
     setFollowUpRx([{ key: Date.now(), drug: "", dosage: "", instructions: "" }]);
     setFollowUpError("");
@@ -296,7 +302,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
   }
 
   async function saveFollowUpPrescription(consultationId) {
-    if (!selected || saving || unconfirmedSave || historyLoading || historyError) return;
+    if (!selected || saving || unconfirmedSave || historyLoading || historyError || !allergyAvailable || allergyPending) return;
     const rows = followUpRx
       .filter((r) => r.drug.trim())
       .map((r) => ({ consultation_id: consultationId, drug: r.drug.trim(), dosage: r.dosage.trim(), instructions: r.instructions.trim() }));
@@ -316,7 +322,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
 
   async function saveConsultation(e) {
     e.preventDefault();
-    if (!selected || saveLock.current || historyLoading || historyError) return;
+    if (!selected || saveLock.current || historyLoading || historyError || !allergyAvailable || allergyLock.current) return;
     if (!diagnosis.trim()) {
       setFormError("Add a diagnosis before saving.");
       return;
@@ -455,6 +461,9 @@ export default function DoctorDashboard({ staff, onLogout }) {
                 </div>
               </div>
 
+              <AllergyPanel patientId={selected.id} staff={staff} disabled={saving || unconfirmedSave}
+                onAvailabilityChange={setAllergyAvailable} onPendingChange={pending => {allergyLock.current=pending;setAllergyPending(pending);}} />
+
               <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 18, marginBottom: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                   <BedDouble size={15} color="#A13D3D" />
@@ -487,7 +496,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
                     <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 14, margin: 0 }}>Referrals</h3>
                   </div>
                   {!showReferralForm && (
-                    <button className="wl-btn" disabled={saving || unconfirmedSave || historyLoading || !!historyError} onClick={() => setShowReferralForm(true)} style={{ background: "#7C5CBF", color: "#fff", fontSize: 12, padding: "6px 10px" }}>
+                    <button className="wl-btn" disabled={saving || unconfirmedSave || historyLoading || !!historyError || !allergyAvailable || allergyPending} onClick={() => setShowReferralForm(true)} style={{ background: "#7C5CBF", color: "#fff", fontSize: 12, padding: "6px 10px" }}>
                       Refer to another facility
                     </button>
                   )}
@@ -592,7 +601,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
               <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 20, marginBottom: 16 }}>
                 <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 15, margin: "0 0 14px" }}>New consultation</h3>
                 <form onSubmit={saveConsultation}>
-                  <fieldset disabled={saving || unconfirmedSave || historyLoading || !!historyError} style={{ border: 0, margin: 0, padding: 0 }}>
+                  <fieldset disabled={saving || unconfirmedSave || historyLoading || !!historyError || !allergyAvailable || allergyPending} style={{ border: 0, margin: 0, padding: 0 }}>
                   <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Diagnosis</label>
                   <input className="wl-input" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} placeholder="e.g. Acute malaria" style={{ marginBottom: 12 }} />
 
@@ -621,7 +630,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
                   {historyLoading && <p role="status">Loading patient history…</p>}
                   {historyError && <p role="alert">{historyError} <button type="button" onClick={() => loadHistory(selected.id)}>Retry history</button></p>}
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <button className="wl-btn" type="submit" disabled={saving || historyLoading || !!historyError} style={{ background: "#2B6777", color: "#fff" }}>{saving ? "Saving…" : unconfirmedSave ? "Retry consultation save" : "Save consultation"}</button>
+                    <button className="wl-btn" type="submit" disabled={saving || historyLoading || !!historyError || !allergyAvailable || allergyPending} style={{ background: "#2B6777", color: "#fff" }}>{saving ? "Saving…" : unconfirmedSave ? "Retry consultation save" : "Save consultation"}</button>
                     {formError && (
                       <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#A13D3D", fontSize: 13 }}>
                         <AlertCircle size={14} /> {formError}

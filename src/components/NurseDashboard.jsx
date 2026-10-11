@@ -82,7 +82,7 @@ export default function NurseDashboard({ staff, onLogout }) {
   return (
     <div>
       <Header staff={staff} onLogout={onLogout} />
-      <div className="wl-split-page" style={{ padding: 32, maxWidth: 1000, margin: "0 auto", display: "grid", gridTemplateColumns: "280px 1fr", gap: 20 }}>
+      <div id="clinic-content" role="main" tabIndex={-1} className="wl-split-page" style={{ padding: 32, maxWidth: 1000, margin: "0 auto", display: "grid", gridTemplateColumns: "280px 1fr", gap: 20 }}>
         <div>
           {queue.length > 0 && (
             <div style={{ marginBottom: 18 }}>

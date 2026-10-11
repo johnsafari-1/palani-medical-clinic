@@ -162,7 +162,7 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
   return (
     <div>
       <Header staff={staff} onLogout={onLogout} />
-      <div className="wl-page" style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
+      <div id="clinic-content" role="main" tabIndex={-1} className="wl-page" style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
         <h2 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 18, margin: "0 0 4px" }}>Patient registration</h2>
         <p style={{ color: "#5B6B72", fontSize: 13, margin: "0 0 24px" }}>Register a new patient and give them a patient ID for their visit.</p>
 

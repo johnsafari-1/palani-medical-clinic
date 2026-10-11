@@ -41,7 +41,7 @@ export default function PharmacyDashboard({ staff, onLogout }) {
   return (
     <div>
       <Header staff={staff} onLogout={onLogout} />
-      <div className="wl-page" style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
+      <div id="clinic-content" role="main" tabIndex={-1} className="wl-page" style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
         <h2 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 18, margin: "0 0 4px" }}>Prescription queue</h2>
         <p style={{ color: "#5B6B72", fontSize: 13, margin: "0 0 24px" }}>Prescriptions written by doctors appear here for dispensing.</p>
         <button type="button" className="wl-btn" onClick={reload} disabled={loading || !!savingId}>Refresh queue</button>
@@ -61,7 +61,7 @@ export default function PharmacyDashboard({ staff, onLogout }) {
                 <div style={{ padding: 24, textAlign: "center", color: "#7C8A90", fontSize: 13 }}>No prescriptions waiting.</div>
               ) : (
                 pending.map((p, i) => (
-                  <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: i < pending.length - 1 ? "1px solid #EEF1F2" : "none" }}>
+                  <div key={p.id} className="clinic-queue-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: i < pending.length - 1 ? "1px solid #EEF1F2" : "none" }}>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{p.consultations?.patients?.name} <span style={{ color: "#7C8A90", fontWeight: 400 }}>· {p.drug} {p.dosage && `— ${p.dosage}`}</span></div>
                       <div style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#7C8A90" }}>{p.consultations?.patients?.code} · {p.instructions}</div>
@@ -82,7 +82,7 @@ export default function PharmacyDashboard({ staff, onLogout }) {
                 <div style={{ padding: 24, textAlign: "center", color: "#7C8A90", fontSize: 13 }}>Nothing dispensed yet.</div>
               ) : (
                 dispensed.map((p, i) => (
-                  <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", borderBottom: i < dispensed.length - 1 ? "1px solid #EEF1F2" : "none" }}>
+                  <div key={p.id} className="clinic-queue-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", borderBottom: i < dispensed.length - 1 ? "1px solid #EEF1F2" : "none" }}>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{p.consultations?.patients?.name} <span style={{ color: "#7C8A90", fontWeight: 400 }}>· {p.drug}</span></div>
                     <span className="wl-badge" style={{ background: "#2F7D4F1A", color: "#2F7D4F" }}>Dispensed</span>
                   </div>

@@ -273,7 +273,7 @@ export default function CashierDashboard({ staff, onLogout }) {
   return (
     <div>
       <Header staff={staff} onLogout={onLogout} />
-      <div className="wl-page" style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
+      <div id="clinic-content" role="main" tabIndex={-1} className="wl-page" style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
           <h2 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 18, margin: 0 }}>Billing</h2>
           <button className="wl-btn" onClick={() => setShowOtc(true)} style={{ background: "#3D6FB4", color: "#fff", display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>

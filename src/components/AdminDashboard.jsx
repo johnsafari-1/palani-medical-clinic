@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, AlertCircle, KeyRound, Ban, RotateCcw, Check, X } from "lucide-react";
+import { Plus, Trash2, AlertCircle, KeyRound, Ban, RotateCcw, Check, X, Users, Tags, BarChart3, ShieldCheck } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import { ROLES, roleMeta } from "../constants";
 import Header from "./Header";
@@ -100,9 +100,14 @@ export default function AdminDashboard({ staff, onLogout }) {
 
   return (
     <div>
-      <Header staff={staff} onLogout={onLogout} />
-      <div className="wl-page" style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
-        <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+      <Header staff={staff} onLogout={onLogout} activeItem={tab} navigation={[
+        { key: "staff", label: "Staff accounts", icon: Users, onSelect: () => setTab("staff") },
+        { key: "price", label: "Price list", icon: Tags, onSelect: () => setTab("price") },
+        { key: "reports", label: "Reports", icon: BarChart3, onSelect: () => setTab("reports") },
+        { key: "audit", label: "Audit log", icon: ShieldCheck, onSelect: () => setTab("audit") },
+      ]} />
+      <div id="clinic-content" role="main" tabIndex={-1} className="wl-page" style={{ padding: 32, maxWidth: 900, margin: "0 auto" }}>
+        <div className="clinic-section-tabs" style={{ display: "flex", gap: 8, marginBottom: 24 }}>
           <button
             className="wl-btn wl-tab"
             onClick={() => setTab("staff")}
@@ -204,7 +209,7 @@ export default function AdminDashboard({ staff, onLogout }) {
               const Icon = meta.icon;
               return (
                 <div key={u.id} className="wl-row" style={{ padding: "14px 20px", borderBottom: i < staffList.length - 1 ? "1px solid #EEF1F2" : "none" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div className="clinic-staff-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                       <span className="wl-badge" style={{ background: meta.color + "1A", color: meta.color }}>
                         <Icon size={13} /> {meta.label}

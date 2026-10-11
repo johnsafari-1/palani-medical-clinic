@@ -115,4 +115,16 @@ describe("staff password login", () => {
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("connection"));
     expect(screen.getByRole("button", { name: "Sign in" }).disabled).toBe(false);
   });
+  it("shows and hides the password without changing the submitted credential", async () => {
+    supabase.auth.signInWithPassword.mockResolvedValueOnce({ error: { code: "invalid_credentials" } });
+    render(tree(signedOut, "/login"));
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: " secret pass " } });
+    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+    expect(screen.getByLabelText("Password").type).toBe("text");
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(screen.getByLabelText("Password").type).toBe("password");
+    fillAndSubmit();
+    await screen.findByRole("alert");
+    expect(supabase.auth.signInWithPassword).toHaveBeenLastCalledWith({ email: "doctor1@palani.local", password: " secret pass " });
+  });
 });

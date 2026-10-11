@@ -103,9 +103,13 @@ export default function NurseDashboard({ staff, onLogout }) {
               </h3>
               <div className="wl-card" style={{ overflow: "hidden" }}>
                 {queue.map((v, i) => (
-                  <div
+                  <button
                     key={v.id}
-                    className="wl-row"
+                    type="button"
+                    className="wl-row clinic-patient-choice"
+                    aria-label={`Select ${v.patients?.name || "patient"} from queue`}
+                    aria-pressed={selectedId === v.patient_id}
+                    disabled={locked || patientsLoading || !!patientsError}
                     onClick={() => selectPatient(v.patient_id)}
                     style={{
                       padding: "10px 14px",
@@ -114,14 +118,14 @@ export default function NurseDashboard({ staff, onLogout }) {
                       background: selectedId === v.patient_id ? "#C2467D14" : "transparent",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{v.patients?.name}</span>
                       <span className="wl-badge" style={{ background: v.status === "Waiting" ? "#C77D2E1A" : "#3D6FB41A", color: v.status === "Waiting" ? "#C77D2E" : "#3D6FB4", fontSize: 10 }}>
                         {v.status}
                       </span>
-                    </div>
-                    <div style={{ fontSize: 11, color: "#7C8A90" }}>Checked in {new Date(v.checked_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
-                  </div>
+                    </span>
+                    <span style={{ display: "block", fontSize: 11, color: "#7C8A90" }}>Checked in {new Date(v.checked_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                  </button>
                 ))}
               </div>
             </div>
@@ -137,8 +141,13 @@ export default function NurseDashboard({ staff, onLogout }) {
               <div style={{ padding: 20, textAlign: "center", color: "#7C8A90", fontSize: 12 }}>{patientsLoading ? "Loading patients…" : patientsError ? "Patient list unavailable." : "No patients registered yet."}</div>
             ) : (
               filtered.map((p) => (
-                <div
+                <button
                   key={p.id}
+                  type="button"
+                  className="wl-row clinic-patient-choice"
+                  aria-label={`Select ${p.name} (${p.code})`}
+                  aria-pressed={selectedId === p.id}
+                  disabled={locked || patientsLoading || !!patientsError}
                   onClick={() => selectPatient(p.id)}
                   style={{
                     padding: "12px 14px",
@@ -148,9 +157,9 @@ export default function NurseDashboard({ staff, onLogout }) {
                     borderLeft: selectedId === p.id ? "3px solid #C2467D" : "3px solid transparent",
                   }}
                 >
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</div>
-                  <div style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#7C8A90" }}>{p.code}</div>
-                </div>
+                  <span style={{ display: "block", fontSize: 13, fontWeight: 600 }}>{p.name}</span>
+                  <span style={{ display: "block", fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#7C8A90" }}>{p.code}</span>
+                </button>
               ))
             )}
           </div>
@@ -189,14 +198,14 @@ export default function NurseDashboard({ staff, onLogout }) {
                     </div>
                   </fieldset>
                   {unconfirmed && <p role="status">The save is unconfirmed. Retry these exact readings before changing patient or leaving this screen.</p>}
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                     <button className="wl-btn" type="submit" disabled={saving || (!unconfirmed && (historyLoading || !!historyError))} style={{ background: "#C2467D", color: "#fff" }}>{saving ? "Saving…" : unconfirmed ? "Retry vitals save" : "Save vitals"}</button>
                     {formError && (
-                      <span role="alert" style={{ display: "flex", alignItems: "center", gap: 6, color: "#A13D3D", fontSize: 13 }}>
+                      <span role="alert" style={{ display: "flex", alignItems: "center", gap: 6, color: "#A13D3D", fontSize: 13, flex: "1 1 180px", minWidth: 0, overflowWrap: "anywhere" }}>
                         <AlertCircle size={14} /> {formError}
                       </span>
                     )}
-                    {savedMsg && <span role="status" style={{ fontSize: 13, color: "#2F7D4F", fontFamily: "IBM Plex Mono, monospace" }}>{savedMsg}</span>}
+                    {savedMsg && <span role="status" style={{ fontSize: 13, color: "#2F7D4F", fontFamily: "IBM Plex Mono, monospace", overflowWrap: "anywhere" }}>{savedMsg}</span>}
                   </div>
                 </form>
               </div>

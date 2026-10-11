@@ -24,7 +24,7 @@ beforeEach(() => {
 afterEach(cleanup);
 function mount() { render(<NurseDashboard staff={{ id: "nurse", role: "Nurse" }} onLogout={() => {}} />); }
 async function alice() {
-  mount();fireEvent.click(await screen.findByText("Synthetic Alice"));
+  mount();fireEvent.click(await screen.findByRole("button", { name: "Select Synthetic Alice (PT-A)" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Save vitals" }).disabled).toBe(false));
   fireEvent.change(screen.getByLabelText("Pulse (beats/min)"), { target: { value: "76" } });
 }
@@ -34,26 +34,26 @@ it("saves through one RPC, blocks concurrent saves/patient changes and clears on
   const pending = defer();supabase.rpc.mockReturnValue(pending.promise);await alice();
   const form = screen.getByRole("button", { name: "Save vitals" }).closest("form");fireEvent.submit(form);fireEvent.submit(form);
   expect(supabase.rpc).toHaveBeenCalledTimes(1);const [method,args] = supabase.rpc.mock.calls[0];expect(method).toBe("save_patient_vitals");expect(args.p_pulse).toBe(76);expect(args.recorded_by).toBeUndefined();
-  fireEvent.click(screen.getByText("Synthetic Bob"));expect(screen.getByLabelText("Pulse (beats/min)").value).toBe("76");expect(screen.queryAllByText("Synthetic Bob")).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Select Synthetic Bob (PT-B)" }).disabled).toBe(true);fireEvent.click(screen.getByRole("button", { name: "Select Synthetic Bob (PT-B)" }));expect(screen.getByLabelText("Pulse (beats/min)").value).toBe("76");expect(screen.queryAllByText("Synthetic Bob")).toHaveLength(1);
   await act(async () => pending.resolve(confirmed(args)));expect(await screen.findByText("Vitals logged as VT-TEST")).toBeTruthy();expect(screen.getByLabelText("Pulse (beats/min)").value).toBe("");
 });
 it("freezes a lost response and retries the exact original request", async () => {
   supabase.rpc.mockRejectedValueOnce(new Error("Connection lost")).mockImplementationOnce((_method,args) => Promise.resolve(confirmed(args)));await alice();
   fireEvent.click(screen.getByRole("button", { name: "Save vitals" }));const retry = await screen.findByRole("button", { name: "Retry vitals save" });
   expect(screen.getByLabelText("Pulse (beats/min)").closest("fieldset").disabled).toBe(true);
-  fireEvent.click(screen.getByText("Synthetic Bob"));fireEvent.click(retry);expect(await screen.findByText("Vitals logged as VT-TEST")).toBeTruthy();expect(supabase.rpc.mock.calls[0]).toEqual(supabase.rpc.mock.calls[1]);
+  expect(screen.getByRole("button", { name: "Select Synthetic Bob (PT-B)" }).disabled).toBe(true);fireEvent.click(screen.getByRole("button", { name: "Select Synthetic Bob (PT-B)" }));fireEvent.click(retry);expect(await screen.findByText("Vitals logged as VT-TEST")).toBeTruthy();expect(supabase.rpc.mock.calls[0]).toEqual(supabase.rpc.mock.calls[1]);
 });
 it("retains an editable draft on database rejection", async () => {
   supabase.rpc.mockResolvedValue({ error: { code: "22023", message: "Invalid reading" }, data: null });await alice();fireEvent.click(screen.getByRole("button", { name: "Save vitals" }));
   expect((await screen.findByRole("alert")).textContent.trim()).toBe("Invalid reading");expect(screen.getByLabelText("Pulse (beats/min)").value).toBe("76");expect(screen.getByLabelText("Pulse (beats/min)").closest("fieldset").disabled).toBe(false);
 });
 it("shows unavailable history and blocks new saves until a successful retry", async () => {
-  historyError = true;mount();fireEvent.click(await screen.findByText("Synthetic Alice"));expect(await screen.findByRole("alert")).toBeTruthy();
+  historyError = true;mount();fireEvent.click(await screen.findByRole("button", { name: "Select Synthetic Alice (PT-A)" }));expect(await screen.findByRole("alert")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Save vitals" }).disabled).toBe(true);expect(screen.queryByText("No vitals recorded for this patient yet.")).toBeNull();
   historyError = false;fireEvent.click(screen.getByRole("button", { name: "Retry history" }));await waitFor(() => expect(screen.getByRole("button", { name: "Save vitals" }).disabled).toBe(false));
 });
 it("discards late history for another patient", async () => {
-  delayedHistory = defer();mount();fireEvent.click(await screen.findByText("Synthetic Alice"));fireEvent.click(screen.getByText("Synthetic Bob"));
+  delayedHistory = defer();mount();fireEvent.click(await screen.findByRole("button", { name: "Select Synthetic Alice (PT-A)" }));fireEvent.click(screen.getByRole("button", { name: "Select Synthetic Bob (PT-B)" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Save vitals" }).disabled).toBe(false));
   await act(async () => delayedHistory.resolve({ data: [{ id: "old", bp: "999/999", recorded_at: "2026-10-11" }], error: null }));expect(screen.queryByText(/999\/999/)).toBeNull();
 });

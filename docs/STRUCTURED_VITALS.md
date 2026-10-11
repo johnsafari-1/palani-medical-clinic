@@ -14,6 +14,8 @@ Representation checks reject nonfinite numbers, partial/mismatched BP, missing r
 
 Nurse reads distinguish unavailable history/patient lists/queues from empty results. History requests are keyed so late responses cannot replace the selected patient's readings. Concurrent saves and patient changes during an unconfirmed save are blocked. Known database rejections leave an editable draft; lost/malformed responses freeze the exact request for retry. Confirmed responses must match the patient, measurement time, request and readings before clearing the draft. Zero values remain visible with units in Nurse and Doctor history.
 
+Patient-list and queue entries use native buttons with named selection controls, visible keyboard focus and selected state. They are disabled during saving or an unconfirmed retry and while patient loading is unavailable. Save feedback wraps independently of the action button on narrow layouts.
+
 ## Mapping
 
 `src/fhir/vitals.js` converts newly submitted structured rows into separate base R4 `Observation` objects:
@@ -44,6 +46,8 @@ Deployment status:
 1. Database: migration applied and repository filename aligned with hosted history.
 2. Hosted validation: vitals plus all four prior regression scripts passed; no fixtures remain and no new Security Advisor findings were reported. Rows and audit events were rolled back; sequence numbers can advance during tests.
 3. Frontend: PR #7 remains draft and unmerged. Preview the Nurse form at desktop/phone widths and verify test-account save, known rejection, lost-response retry and patient-history behavior before merge.
+
+Browser review reached the Vercel branch preview at `https://palani-medical-clinic-git-feature-structured-vitals-johnsafari.vercel.app/login`. Its desktop login rendered at 1363×936 without horizontal overflow. The secure credential request was declined, so no signed-in Nurse screen, desktop/mobile Nurse layout, real save or browser retry scenario was verified. Source review fixed mouse-only patient selection and added wrapping save feedback; automated Nurse tests verify the accessible selection controls remain locked during saving/unconfirmed retries. The authenticated checks above remain a merge prerequisite.
 
 Recovery: revert the Nurse frontend first, then `supabase/rollback/structured_vitals.sql` revokes the new RPC and removes the browser guard. All readings, captured audits, added columns and request-ID index remain. This rollback is locally tested; it is not a backup/restore guarantee.
 

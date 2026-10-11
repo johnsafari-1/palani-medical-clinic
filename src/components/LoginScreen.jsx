@@ -1,11 +1,12 @@
 import { useRef, useState } from "react";
-import { Lock, AlertCircle } from "lucide-react";
+import { Lock, AlertCircle, Eye, EyeOff, HeartPulse, ArrowRight } from "lucide-react";
 import { supabase, usernameToEmail } from "../supabaseClient";
 import { ROLES } from "../constants";
 
 export default function LoginScreen() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [activeRole, setActiveRole] = useState(null);
@@ -38,92 +39,52 @@ export default function LoginScreen() {
   }
 
   return (
-    <div className="wl-login-outer" style={{ display: "flex", minHeight: "100vh" }}>
-      <div className="wl-login-panel" style={{ flex: "0 0 380px", padding: "56px 48px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 32 }}>
-          <div style={{ width: 8, height: 28, borderRadius: 2, background: "#2B6777" }} />
-          <span style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 22 }}>Palani Medical Clinic</span>
+    <main className="clinic-login">
+      <section className="clinic-login-story" aria-label="Palani staff portal">
+        <div className="clinic-brand"><span className="clinic-brand-mark"><HeartPulse size={25} aria-hidden="true" /></span><div><strong>Palani</strong><span>Medical Clinic</span></div></div>
+        <div className="clinic-login-intro">
+          <span className="clinic-story-tag">Your clinic. Connected.</span>
+          <h1>Connected care.<br /><span>Clearer workdays.</span></h1>
+          <p>From registration to care, keep your team’s daily work connected in one staff workspace.</p>
         </div>
-        <h1 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 20, margin: "0 0 6px" }}>Welcome to Palani</h1>
-        <p style={{ color: "#5B6B72", fontSize: 14, margin: "0 0 28px" }}>Every department, one system, zero paperwork.</p>
-
-        <form onSubmit={handleLogin}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-            <label htmlFor="login-username" style={{ fontSize: 13, fontWeight: 600 }}>Username</label>
-            {activeRole && (
-              <span className="wl-fade-in wl-badge" style={{ background: activeRole.color + "1A", color: activeRole.color }}>
-                {activeRole.label}
-              </span>
-            )}
-          </div>
-          <input
-            id="login-username"
-            name="username"
-            autoComplete="username"
-            required
-            disabled={loading}
-            ref={usernameRef}
-            className="wl-input"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder={activeRole ? `e.g. ${activeRole.key.toLowerCase().replace(/\s+/g, "")}1` : "e.g. admin"}
-            style={{ marginBottom: 6, borderColor: activeRole ? activeRole.color : undefined, boxShadow: activeRole ? `0 0 0 3px ${activeRole.color}1F` : undefined }}
-          />
-          {activeRole && (
-            <p className="wl-fade-in" style={{ fontSize: 12, color: "#7C8A90", margin: "0 0 10px" }}>
-              Ask your Admin to create this login for you — they assign the {activeRole.label} role from their dashboard.
-            </p>
-          )}
-          <div style={{ marginBottom: activeRole ? 6 : 16 }} />
-          <label htmlFor="login-password" style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>Password</label>
-          <input id="login-password" name="password" autoComplete="current-password" required disabled={loading} className="wl-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" style={{ marginBottom: 16 }} />
-          {error && (
-            <div role="alert" style={{ display: "flex", alignItems: "center", gap: 6, color: "#A13D3D", fontSize: 13, marginBottom: 16 }}>
-              <AlertCircle size={14} /> {error}
-            </div>
-          )}
-          <button className="wl-btn" type="submit" disabled={loading} style={{ width: "100%", background: activeRole ? activeRole.color : "#2B6777", color: "#fff", padding: "11px 16px" }}>
-            {loading ? "Signing in..." : "Sign in"}
-          </button>
-        </form>
-
-        <div style={{ marginTop: 24, padding: 12, borderRadius: 8, background: "#EEF2F3", fontSize: 12, color: "#5B6B72", display: "flex", gap: 8 }}>
-          <Lock size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-          <span>Use the staff login assigned by your Administrator. Contact them if you need an account or password reset.</span>
-        </div>
-      </div>
-
-      <div className="wl-login-panel" style={{ flex: 1, background: "#1E2A30", padding: "56px 48px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-        <div style={{ color: "#8FA3AA", fontSize: 12, fontWeight: 600, letterSpacing: 0.4, textTransform: "uppercase", marginBottom: 20 }}>Staff directory</div>
-        <div className="wl-role-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {ROLES.map((r) => {
-            const Icon = r.icon;
-            return (
-              <div
-                key={r.key}
-                className="wl-role-card"
-                role="button"
-                tabIndex={0}
-                title={`Fill the form for a ${r.label} login`}
-                onClick={() => handleRoleClick(r)}
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && handleRoleClick(r)}
-                style={{
-                  background: activeRole?.key === r.key ? "#2E3D45" : "#26343B",
-                  borderRadius: 10,
-                  padding: "14px 16px",
-                  borderLeft: `4px solid ${r.color}`,
-                  boxShadow: activeRole?.key === r.key ? `0 0 0 1px ${r.color}66` : "none",
-                }}
-              >
-                <span className="wl-role-icon">
-                  <Icon size={18} color={r.color} />
-                </span>
-                <div style={{ color: "#fff", fontSize: 13, fontWeight: 600, marginTop: 8 }}>{r.label}</div>
-              </div>
-            );
+        <div className="clinic-department-heading"><span>Find your department</span><small>Select a role to focus the sign-in form</small></div>
+        <div className="clinic-department-grid">
+          {ROLES.map(role => {
+            const Icon = role.icon;
+            return <button key={role.key} type="button" className={`clinic-department ${activeRole?.key === role.key ? "is-selected" : ""}`}
+              aria-pressed={activeRole?.key === role.key} title={`Fill the form for a ${role.label} login`} onClick={() => handleRoleClick(role)}>
+              <Icon size={19} aria-hidden="true" /><span>{role.label}</span><ArrowRight size={15} aria-hidden="true" />
+            </button>;
           })}
         </div>
-      </div>
-    </div>
+        <p className="clinic-login-footnote"><span className="clinic-test-dot" />Test workspace · Use test data only</p>
+      </section>
+      <section className="clinic-login-form-panel" aria-label="Staff sign in">
+        <div className="clinic-login-form-card">
+          <span className="clinic-eyebrow">Staff access</span>
+          <h2>Welcome back</h2>
+          <p className="clinic-login-description">Sign in with the account assigned by your Administrator.</p>
+          {activeRole && <div className="clinic-selected-role"><activeRole.icon size={16} aria-hidden="true" />{activeRole.label}<span>Selected department</span></div>}
+          <form onSubmit={handleLogin}>
+            <label htmlFor="login-username">Username</label>
+            <input id="login-username" name="username" autoComplete="username" required disabled={loading} ref={usernameRef}
+              className="wl-input" value={username} onChange={event => setUsername(event.target.value)}
+              placeholder={activeRole ? `e.g. ${activeRole.key.toLowerCase().replace(/\s+/g, "")}1` : "Enter your username"} />
+            <label htmlFor="login-password">Password</label>
+            <div className="clinic-password-field">
+              <input id="login-password" name="password" autoComplete="current-password" required disabled={loading} className="wl-input"
+                type={showPassword ? "text" : "password"} value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password" />
+              <button type="button" disabled={loading} aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>
+                {showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+              </button>
+            </div>
+            {error && <div role="alert" className="clinic-login-error"><AlertCircle size={18} aria-hidden="true" /><span>{error}</span></div>}
+            <button className="wl-btn clinic-login-submit" type="submit" disabled={loading}>{loading ? "Signing in..." : "Sign in"}<ArrowRight size={18} aria-hidden="true" /></button>
+          </form>
+          <div className="clinic-login-help"><Lock size={18} aria-hidden="true" /><p><strong>Need access?</strong><br />Contact your Administrator for an account or password reset. Your account determines your department access.</p></div>
+        </div>
+        <span className="clinic-login-caption">Palani Medical Clinic · Staff portal</span>
+      </section>
+    </main>
   );
 }

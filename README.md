@@ -66,13 +66,13 @@ npm audit --omit=dev
 
 `supabase/tests/staff_access.sql` tests the live policies using transaction-scoped fixtures and `authenticated`/`anon` database roles. Run it as the database owner in Supabase SQL Editor; all fixture users, patient records, and writes are rolled back. It tests all seven staff roles, missing membership, inactive Admin access, anonymous access, permitted patient writes, denied writes, and role escalation.
 
-Validation on 11 October 2026: 96 frontend tests passed; production build passed; runtime dependency audit reported no vulnerabilities; database access tests passed. Supabase Security Advisors still reports leaked-password protection disabled. Enable it in Auth password security settings if available for the project's plan.
+Validation on 11 October 2026: 169 tests passed; production build passed; full dependency audit reported no vulnerabilities; hosted database access tests passed. Supabase Security Advisors still reports leaked-password protection disabled. This plan-dependent feature is deferred on the test project at the user's request.
 
 ## Vercel
 
 Keep the project URL and public key configured in the Vercel environment. Existing deployments using `VITE_SUPABASE_ANON_KEY` continue to work. `vercel.json` provides the SPA fallback required when opening or refreshing a dashboard URL directly.
 
-The Supabase policy and Edge Function changes are live. The frontend route changes require deploying this branch or merging its pull request into the Vercel production branch. Verify sign-in with an existing staff account after deployment, refresh its dashboard URL, test another department's URL, and sign out.
+The Supabase policy and Edge Function changes are live. Auth routes and atomic consultation changes have been merged into `main`; Vercel deployment and authenticated browser checks have not been verified in this session. Verify sign-in with an existing staff account after deployment, refresh its dashboard URL, test another department's URL, and sign out.
 
 ## Scope
 
@@ -82,4 +82,6 @@ Use test data while the prototype is developed. Auth and RLS protections alone d
 
 The doctor screen now uses `save_clinical_consultation` to save the consultation, prescriptions, lab orders and selected visit completion atomically. Drafts are retained on failure, and retries use the same request ID until confirmed. Patient-history failures block clinical changes instead of appearing as empty records.
 
-The additive migration `supabase/migrations/20261011060200_atomic_clinical_records.sql` expands audit coverage and removes browser TRUNCATE/audit-write privileges. **It was applied to the linked test Supabase project on 11 October 2026. Hosted clinical-integrity and staff-access checks passed, and synthetic test records were rolled back.** The frontend changes remain in PR #3 and still require deployment. See [deployment, rollback and remaining compliance work](docs/CLINICAL_INTEGRITY.md). A compatibility rollback and post-deployment SQL checks are included.
+The additive migration `supabase/migrations/20261011060200_atomic_clinical_records.sql` expands audit coverage and removes browser TRUNCATE/audit-write privileges. **It was applied to the linked test Supabase project on 11 October 2026. Hosted clinical-integrity and staff-access checks passed, and synthetic test records were rolled back.** The consultation frontend was merged in PR #3. See [deployment, rollback and remaining compliance work](docs/CLINICAL_INTEGRITY.md). A compatibility rollback and post-deployment SQL checks are included.
+
+Pharmacy and Lab screens use guarded completion RPCs. Browser updates cannot alter prescribed fields, patient links or ordering fields, spoof completion actors/timestamps, or overwrite completed lab results. Save failures retain drafts; queue failures disable actions until a successful refresh. Billing-trigger updates remain supported. The migration `supabase/migrations/20261011062324_guarded_order_completion.sql` is live on the linked test project, and hosted order-completion, consultation and staff-access checks passed. The Pharmacy/Lab frontend changes are on `feature/guarded-order-completion` and require merging/deployment. A tested non-destructive rollback and transaction-scoped hosted verification script are included.

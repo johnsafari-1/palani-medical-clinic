@@ -12,42 +12,53 @@ This change builds on the merged Supabase Auth work. It is one implementation st
 | Retry integrity | A request UUID and payload fingerprint detect retries and changed submissions. Matching retries return the original consultation. Visit locks and unique indexes serialize competing writes. The fingerprint is not encryption. |
 | Creation/change audits | Private database triggers capture INSERT, UPDATE and DELETE on all 12 source tables, with actor, record ID, timestamp and before/after snapshots. Audit writes and TRUNCATE are revoked from browser roles. Database owners retain administrative authority; this is not external tamper-evident storage. |
 | Doctor UI | Drafts clear only after confirmation; duplicate submission and patient switching are blocked during saves. An unconfirmed response retains the draft and request ID for retry. History failures show unavailable states and block clinical writes. Old patient responses cannot replace current history. |
+| Dispensing | An invoker-rights RPC locks the prescription and verifies an active Pharmacist/Admin. A database trigger protects prescribed fields and links even for direct browser updates, derives the dispensing actor/time on the server, and blocks reversal or modification of a completed dispense. Same-actor retries return the saved completion without another audit event. |
+| Lab completion | An invoker-rights RPC verifies an active Lab Technician/Admin and locks the order. A database trigger protects patient/test/ordering fields, verifies the consultation patient, and derives completion actor/time. Completed results cannot be overwritten by browser updates. Same-actor, same-result retries return the saved result; conflicts preserve the existing result. |
+| Pharmacy/Lab UI | Save and queue failures are visible. Failed refreshes retain a read-only snapshot. Results clear only after a confirmed response. An unconfirmed lab response freezes the original draft for retry; a rejected conflicting draft remains visible alongside the saved result after refresh. |
 | Development tooling | Pin patched build/test packages and refresh transitive dependencies to address the advisories reported by the full dependency audit. CI runs on Node 22; local tools require Node 22.12+ or a supported newer release. |
 
 Retry state exists in the mounted doctor screen. Reloading, signing out or closing the page loses it. For an unconfirmed save, retry in the same screen before leaving. Persistent draft recovery and cross-device reconciliation remain future work.
 
 The new RPC does not remove existing direct table write permissions. Legacy clients can still create consultations without this transaction; other workflows still need dedicated database operations and actor/column protections.
 
+Order guards apply to browser database roles. Trusted database owners/service roles and the existing definer-rights billing trigger retain their maintenance authority; their writes remain audited. This is not a privileged-administrator immutability guarantee. Browser lab corrections and dispensing reversals need a separate, attributed workflow before they can be supported. Dispensing is still a boolean completion, without partial quantities or stock reconciliation. Lab results remain free text, without coded observations, units or reference ranges. Draft recovery across reload/logout is not implemented.
+
 ## Deployment state
 
 The migration `supabase/migrations/20261011060200_atomic_clinical_records.sql` was **applied to the linked test project `dzvaqppqwrgalmvvejab` on 11 October 2026 with explicit approval**. The repository filename matches the hosted migration history. Both hosted clinical-integrity and staff-access verification scripts passed. A follow-up check found zero remaining synthetic patients, staff or Auth users. Catalog checks confirmed all 12 source tables use the private creation/change audit trigger.
 
-The frontend remains in draft PR #3 and is not deployed. The existing frontend remains compatible with the additive columns and stronger audit coverage; it uses its previous separate save requests until the new frontend is deployed. No existing records were backfilled or deleted.
+The order-completion migration `supabase/migrations/20261011062324_guarded_order_completion.sql` was also applied to the linked test project on 11 October 2026. Hosted order-completion checks passed, consultation/staff checks passed again with the guards installed, and a follow-up check found zero remaining order-test patients, staff or Auth users.
+
+The atomic consultation frontend was merged into `main` in PR #3. Its Vercel deployment and authenticated browser behavior have not been verified in this session. The new Pharmacy/Lab frontend changes are on `feature/guarded-order-completion` and still require merging/deployment. Existing pending-to-completed direct updates receive the database protections, but the old Pharmacy/Lab UI still lacks the new failure/retry feedback. No existing records were backfilled or deleted.
 
 Deployment status:
 
-1. Database migration: applied and recorded as `20261011060200_atomic_clinical_records`.
-2. Hosted checks: `supabase/tests/clinical_records.sql` and `supabase/tests/staff_access.sql` passed using transaction-scoped fixtures. Rows and audit events were rolled back; sequence numbers can advance during tests.
-3. Security Advisors: no new findings; leaked-password protection remains disabled. See [password security settings](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
-4. Frontend: merge/deploy PR #3, then verify Doctor save/retry plus Nurse, Lab Technician, billing and Admin audit screens with test accounts. These authenticated browser checks are pending.
+1. Database migrations: applied and recorded as `20261011060200_atomic_clinical_records` and `20261011062324_guarded_order_completion`.
+2. Hosted checks: `supabase/tests/clinical_records.sql`, `supabase/tests/staff_access.sql` and `supabase/tests/order_completion.sql` passed using transaction-scoped fixtures. Rows and audit events were rolled back; sequence numbers can advance during tests.
+3. Security Advisors: no new findings; leaked-password protection remains disabled. The user has deferred this plan-dependent feature on the current test project; no subscription or Auth setting changes are part of this implementation. See [password security settings](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
+4. Frontend: merge/deploy `feature/guarded-order-completion`, then verify Pharmacy/Lab save, retry and refresh with test accounts. Verify the merged Doctor save/retry plus Nurse, billing and Admin audit screens. These authenticated browser checks are pending.
 5. Recovery evidence: backup availability and recovery have not been verified. Establish a recoverable backup/restore point before using real patient data or treating the system as production-ready.
 
 If deployment fails, revert the frontend first. `supabase/rollback/atomic_clinical_records.sql` disables browser execution of the new RPC and restores the nine prior audit triggers. It retains all records, captured audit events, added columns and unique indexes, and keeps the safer TRUNCATE/audit-write revocations. The rollback is locally tested; it is not a replacement for backups. Prefer fixing a specific defect while retaining the stronger audit coverage.
 
+For the order-completion changes, revert Pharmacy/Lab screens first, then use `supabase/rollback/guarded_order_completion.sql` if required. It removes the two order guards and revokes browser access to the two completion RPCs. It leaves all records, saved completions, RLS and audit coverage intact. This compatibility rollback passed locally and was not applied to the hosted project.
+
 ## Validation
 
-Current results: 124 tests passed, production build passed, and the full dependency audit reported zero vulnerabilities after the toolchain updates. GitHub CI also runs the tests and build on each PR.
+Current results: 169 tests passed, production build passed, and the full dependency audit reported zero vulnerabilities after the toolchain updates. GitHub CI also runs the tests and build on each PR.
 
 `npm test` covers the existing Auth/route behavior, doctor-screen saves and history races, retry IDs, and real PostgreSQL semantics through PGlite. A schema-only fixture captures the inspected project's tables, constraints and policies; it contains mock Auth and no patient records, and is not a production restore or fresh-project baseline.
 
 The local tests inject a failing lab-storage trigger after the consultation and prescriptions have been inserted and verify that every write and audit event rolls back. They also check all seven staff roles, inactive and anonymous callers, repeat requests, mismatched payloads/patients, audit protection, and the compatibility rollback. Hosted SQL checks confirmed save/retry behavior, patient/visit integrity, active/inactive/anonymous authorization, creation audit records, protected audit/TRUNCATE grants and the existing staff-access rules. Failure injection and the compatibility rollback were tested locally, not applied to the hosted database.
 
+Order-completion tests also verify direct browser writes cannot alter prescribed drugs, doses, patient links or ordering fields; client-supplied actor/time are overridden; completed results are preserved; retries avoid duplicate audit events; and audit-storage failure rolls back completion. They verify compatibility with the existing invoice-item billing trigger, inactive/anonymous denial, queue errors and stale reads, UI retries, conflict draft retention, and a non-destructive rollback. The transaction-scoped hosted verification script is `supabase/tests/order_completion.sql`.
+
 ## Remaining readiness work
 
 | Area | Next implementation/evidence |
 | --- | --- |
-| Clinical permissions | Least-privilege reads; clinician/patient assignment; protected actor fields; pharmacists restricted to dispensing fields and lab technicians to result fields. Existing shared clinical reads remain broad. |
-| Other transactions | Atomic billing/OTC, dispensing, lab completion, admission/discharge and referral workflows; server timestamps and concurrent state transitions. |
+| Clinical permissions | Least-privilege reads; clinician/patient assignment; actor protections in other workflows. Existing shared clinical reads remain broad. Pharmacy queries no longer request diagnosis, but this does not enforce column-level read isolation. |
+| Other transactions | Atomic billing/OTC, admission/discharge and referral workflows; attributed lab corrections and dispensing reversals; partial dispensing and inventory. |
 | Safe output | Complete the separate printing hardening work, including referral letters. |
 | Clinical safety data | Structured allergy status, coded diagnoses/medications/tests, units and result interpretation, clinician identity and facility identifiers. |
 | HL7 FHIR exchange | Kenya Core R4 mappings, applicable domain profiles, references and terminology validation, an authenticated API with an honest CapabilityStatement, and integration tests against the DHA/partner sandbox. No FHIR endpoint exists yet. |

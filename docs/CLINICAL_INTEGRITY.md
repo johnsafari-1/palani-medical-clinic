@@ -20,17 +20,17 @@ The new RPC does not remove existing direct table write permissions. Legacy clie
 
 ## Deployment state
 
-The migration `supabase/migrations/20261011054404_atomic_clinical_records.sql` is **prepared and locally tested, not applied to the hosted project**. Automatic approval review rejected the attempt because it changes hosted schema, triggers and permissions without explicit approval of that migration or a demonstrated rollback plan. No live schema or data was changed by the attempt.
+The migration `supabase/migrations/20261011060200_atomic_clinical_records.sql` was **applied to the linked test project `dzvaqppqwrgalmvvejab` on 11 October 2026 with explicit approval**. The repository filename matches the hosted migration history. Both hosted clinical-integrity and staff-access verification scripts passed. A follow-up check found zero remaining synthetic patients, staff or Auth users. Catalog checks confirmed all 12 source tables use the private creation/change audit trigger.
 
-The frontend must be deployed only after the migration is applied. The old frontend remains compatible with the additive columns and stronger audit coverage. No records are backfilled or deleted.
+The frontend remains in draft PR #3 and is not deployed. The existing frontend remains compatible with the additive columns and stronger audit coverage; it uses its previous separate save requests until the new frontend is deployed. No existing records were backfilled or deleted.
 
-Deployment sequence:
+Deployment status:
 
-1. Confirm a recoverable Supabase backup/restore point. This environment has not verified backup availability or recovery.
-2. Review and approve the exact migration; apply it to the test project through Supabase migrations. Keep the repository filename aligned with the actual hosted migration version afterward.
-3. Run `supabase/tests/clinical_records.sql` and the existing `supabase/tests/staff_access.sql` as database owner. Both roll back synthetic rows. Sequence numbers can advance during tests.
-4. Run Security Advisors. The pre-change report contained the leaked-password-protection warning; enabling it is a separate Auth setting.
-5. Deploy the frontend and verify Doctor save/retry plus Nurse, Lab Technician, billing and Admin audit screens with test accounts. These authenticated browser checks are still pending.
+1. Database migration: applied and recorded as `20261011060200_atomic_clinical_records`.
+2. Hosted checks: `supabase/tests/clinical_records.sql` and `supabase/tests/staff_access.sql` passed using transaction-scoped fixtures. Rows and audit events were rolled back; sequence numbers can advance during tests.
+3. Security Advisors: no new findings; leaked-password protection remains disabled. See [password security settings](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
+4. Frontend: merge/deploy PR #3, then verify Doctor save/retry plus Nurse, Lab Technician, billing and Admin audit screens with test accounts. These authenticated browser checks are pending.
+5. Recovery evidence: backup availability and recovery have not been verified. Establish a recoverable backup/restore point before using real patient data or treating the system as production-ready.
 
 If deployment fails, revert the frontend first. `supabase/rollback/atomic_clinical_records.sql` disables browser execution of the new RPC and restores the nine prior audit triggers. It retains all records, captured audit events, added columns and unique indexes, and keeps the safer TRUNCATE/audit-write revocations. The rollback is locally tested; it is not a replacement for backups. Prefer fixing a specific defect while retaining the stronger audit coverage.
 
@@ -40,7 +40,7 @@ Current results: 124 tests passed, production build passed, and the full depende
 
 `npm test` covers the existing Auth/route behavior, doctor-screen saves and history races, retry IDs, and real PostgreSQL semantics through PGlite. A schema-only fixture captures the inspected project's tables, constraints and policies; it contains mock Auth and no patient records, and is not a production restore or fresh-project baseline.
 
-The tests inject a failing lab-storage trigger after the consultation and prescriptions have been inserted and verify that every write and audit event rolls back. They also check all seven staff roles, inactive and anonymous callers, repeat requests, mismatched payloads/patients, audit protection, and the compatibility rollback. Hosted post-deployment SQL checks are prepared but cannot run until the migration is approved and applied.
+The local tests inject a failing lab-storage trigger after the consultation and prescriptions have been inserted and verify that every write and audit event rolls back. They also check all seven staff roles, inactive and anonymous callers, repeat requests, mismatched payloads/patients, audit protection, and the compatibility rollback. Hosted SQL checks confirmed save/retry behavior, patient/visit integrity, active/inactive/anonymous authorization, creation audit records, protected audit/TRUNCATE grants and the existing staff-access rules. Failure injection and the compatibility rollback were tested locally, not applied to the hosted database.
 
 ## Remaining readiness work
 

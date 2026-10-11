@@ -5,7 +5,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const read = (name) => readFileSync(new URL(name, import.meta.url), "utf8");
-const migration = read("../migrations/20261011054404_atomic_clinical_records.sql");
+const migration = read("../migrations/20261011060200_atomic_clinical_records.sql");
 let db;
 let doctor, patient, visit, request;
 async function role(name, active = true) {

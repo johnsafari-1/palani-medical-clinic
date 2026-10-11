@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Search, User, Plus, X, FileText, AlertCircle, HeartPulse, FlaskConical, BedDouble, Clock, Send, Printer } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import Header from "./Header";
+import { createConsultationSubmission } from "../clinical/consultationSubmission";
 
 export default function DoctorDashboard({ staff, onLogout }) {
   const [patients, setPatients] = useState([]);
@@ -27,11 +28,21 @@ export default function DoctorDashboard({ staff, onLogout }) {
   const [followUpTargetId, setFollowUpTargetId] = useState(null);
   const [followUpRx, setFollowUpRx] = useState([{ key: 1, drug: "", dosage: "", instructions: "" }]);
   const [followUpError, setFollowUpError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [unconfirmedSave, setUnconfirmedSave] = useState(false);
+  const saveLock = useRef(false);
+  const submission = useRef(null);
+  if (!submission.current) submission.current = createConsultationSubmission(supabase);
+  const [selectedVisitId, setSelectedVisitId] = useState(null);
+  const historyRequest = useRef(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
 
   useEffect(() => {
     supabase.from("patients").select("*").order("name").then(({ data }) => setPatients(data || []));
     loadAdmittedIds();
     loadQueue();
+    return () => { historyRequest.current += 1; };
   }, []);
 
   async function loadQueue() {
@@ -51,48 +62,69 @@ export default function DoctorDashboard({ staff, onLogout }) {
   const selected = patients.find((p) => p.id === selectedId) || null;
 
   async function loadHistory(patientId) {
-    const { data: consultations } = await supabase
-      .from("consultations")
-      .select("*, prescriptions(*)")
-      .eq("patient_id", patientId)
-      .order("created_at", { ascending: false });
-    setHistory(consultations || []);
+    const request = ++historyRequest.current;
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const { data: consultations, error: consultationError } = await supabase
+        .from("consultations")
+        .select("*, prescriptions(*)")
+        .eq("patient_id", patientId)
+        .order("created_at", { ascending: false });
+      if (request !== historyRequest.current) return;
+      if (consultationError || !Array.isArray(consultations)) throw new Error("Consultations unavailable");
 
-    const { data: vitalsData } = await supabase
-      .from("vitals")
-      .select("*")
-      .eq("patient_id", patientId)
-      .order("recorded_at", { ascending: false })
-      .limit(5);
-    setVitals(vitalsData || []);
+      const { data: vitalsData, error: vitalsError } = await supabase
+        .from("vitals")
+        .select("*")
+        .eq("patient_id", patientId)
+        .order("recorded_at", { ascending: false })
+        .limit(5);
+      if (request !== historyRequest.current) return;
+      if (vitalsError || !Array.isArray(vitalsData)) throw new Error("Vitals unavailable");
 
-    const { data: labData } = await supabase
-      .from("lab_orders")
-      .select("*")
-      .eq("patient_id", patientId)
-      .order("ordered_at", { ascending: false });
-    setLabResults(labData || []);
+      const { data: labData, error: labError } = await supabase
+        .from("lab_orders")
+        .select("*")
+        .eq("patient_id", patientId)
+        .order("ordered_at", { ascending: false });
+      if (request !== historyRequest.current) return;
+      if (labError || !Array.isArray(labData)) throw new Error("Lab results unavailable");
 
-    const { data: admissionData } = await supabase
-      .from("admissions")
-      .select("*")
-      .eq("patient_id", patientId)
-      .eq("status", "Admitted")
-      .order("admitted_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    setAdmission(admissionData || null);
+      const { data: admissionData, error: admissionError } = await supabase
+        .from("admissions")
+        .select("*")
+        .eq("patient_id", patientId)
+        .eq("status", "Admitted")
+        .order("admitted_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (request !== historyRequest.current) return;
+      if (admissionError) throw new Error("Admissions unavailable");
 
-    const { data: referralData } = await supabase
-      .from("referrals")
-      .select("*")
-      .eq("patient_id", patientId)
-      .order("created_at", { ascending: false });
-    setReferrals(referralData || []);
+      const { data: referralData, error: referralLoadError } = await supabase
+        .from("referrals")
+        .select("*")
+        .eq("patient_id", patientId)
+        .order("created_at", { ascending: false });
+      if (request !== historyRequest.current) return;
+      if (referralLoadError || !Array.isArray(referralData)) throw new Error("Referrals unavailable");
+      setHistory(consultations);
+      setVitals(vitalsData);
+      setLabResults(labData);
+      setAdmission(admissionData || null);
+      setReferrals(referralData);
+    } catch {
+      if (request === historyRequest.current) {
+        setHistoryError("Patient history could not be loaded. Retry before recording clinical changes.");
+      }
+    } finally {
+      if (request === historyRequest.current) setHistoryLoading(false);
+    }
   }
 
   async function admitPatient() {
-    if (!selected) return;
+    if (!selected || saving || unconfirmedSave || historyLoading || historyError) return;
     const { error } = await supabase.from("admissions").insert({
       patient_id: selected.id,
       admitted_by: staff.id,
@@ -106,7 +138,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
   }
 
   async function dischargePatient() {
-    if (!admission) return;
+    if (!admission || saving || unconfirmedSave || historyLoading || historyError) return;
     const { error } = await supabase
       .from("admissions")
       .update({ status: "Discharged", discharged_at: new Date().toISOString(), discharged_by: staff.id })
@@ -125,6 +157,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
 
   async function submitReferral(e) {
     e.preventDefault();
+    if (!selected || saving || unconfirmedSave || historyLoading || historyError) return;
     if (!referralForm.facility_name.trim() || !referralForm.reason.trim()) {
       setReferralError("Fill in the facility name and reason for referral.");
       return;
@@ -161,6 +194,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
   }
 
   function printReferralLetter(referral) {
+    if (historyLoading || historyError) return;
     const consultRows = history
       .slice(0, 3)
       .map((c) => `<li>${c.created_at?.slice(0, 10)} — ${c.diagnosis}${c.notes ? ": " + c.notes : ""}</li>`)
@@ -198,7 +232,14 @@ export default function DoctorDashboard({ staff, onLogout }) {
   }
 
   function selectPatient(id) {
+    if (saveLock.current || submission.current.hasPending()) return false;
+    setSelectedVisitId(null);
     setSelectedId(id);
+    setHistory([]);
+    setVitals([]);
+    setLabResults([]);
+    setAdmission(null);
+    setReferrals([]);
     setDiagnosis("");
     setNotes("");
     setRx([{ key: 1, drug: "", dosage: "", instructions: "" }]);
@@ -210,10 +251,12 @@ export default function DoctorDashboard({ staff, onLogout }) {
     setShowReferralForm(false);
     setReferralError("");
     loadHistory(id);
+    return true;
   }
 
   async function selectFromQueue(visit) {
-    selectPatient(visit.patient_id);
+    if (!selectPatient(visit.patient_id)) return;
+    setSelectedVisitId(visit.id);
     if (visit.status === "Waiting") {
       await supabase.from("visits").update({ status: "In Consultation" }).eq("id", visit.id);
       loadQueue();
@@ -231,6 +274,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
   }
 
   function startFollowUp(consultationId) {
+    if (saving || unconfirmedSave || historyLoading || historyError) return;
     setFollowUpTargetId(consultationId);
     setFollowUpRx([{ key: Date.now(), drug: "", dosage: "", instructions: "" }]);
     setFollowUpError("");
@@ -252,6 +296,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
   }
 
   async function saveFollowUpPrescription(consultationId) {
+    if (!selected || saving || unconfirmedSave || historyLoading || historyError) return;
     const rows = followUpRx
       .filter((r) => r.drug.trim())
       .map((r) => ({ consultation_id: consultationId, drug: r.drug.trim(), dosage: r.dosage.trim(), instructions: r.instructions.trim() }));
@@ -271,59 +316,49 @@ export default function DoctorDashboard({ staff, onLogout }) {
 
   async function saveConsultation(e) {
     e.preventDefault();
-    if (!selected) return;
+    if (!selected || saveLock.current || historyLoading || historyError) return;
     if (!diagnosis.trim()) {
       setFormError("Add a diagnosis before saving.");
       return;
     }
 
-    const { data: consultation, error: consultError } = await supabase
-      .from("consultations")
-      .insert({
-        patient_id: selected.id,
-        doctor_id: staff.id,
-        diagnosis: diagnosis.trim(),
-        notes: notes.trim(),
-      })
-      .select()
-      .single();
-
-    if (consultError) {
-      setFormError(consultError.message);
-      return;
-    }
-
     const prescriptionRows = rx
       .filter((r) => r.drug.trim())
-      .map((r) => ({ consultation_id: consultation.id, drug: r.drug.trim(), dosage: r.dosage.trim(), instructions: r.instructions.trim() }));
-    if (prescriptionRows.length) {
-      await supabase.from("prescriptions").insert(prescriptionRows);
-    }
-
+      .map((r) => ({ drug: r.drug.trim(), dosage: r.dosage.trim(), instructions: r.instructions.trim() }));
     const testNames = labTests.split(",").map((t) => t.trim()).filter(Boolean);
-    if (testNames.length) {
-      const labRows = testNames.map((testName) => ({
-        patient_id: selected.id,
-        consultation_id: consultation.id,
-        test_name: testName,
-        ordered_by: staff.id,
-      }));
-      await supabase.from("lab_orders").insert(labRows);
+    if (rx.some((r) => !r.drug.trim() && (r.dosage.trim() || r.instructions.trim()))) {
+      setFormError("Enter a drug name for every prescription row with dosage or instructions.");
+      return;
     }
-
-    setDiagnosis("");
-    setNotes("");
-    setRx([{ key: Date.now(), drug: "", dosage: "", instructions: "" }]);
-    setLabTests("");
+    saveLock.current = true;
+    setSaving(true);
     setFormError("");
-    setSavedMsg("Consultation saved as " + consultation.code);
-    setTimeout(() => setSavedMsg(""), 3000);
-    loadHistory(selected.id);
-
-    const inProgress = queue.find((v) => v.patient_id === selected.id && v.status === "In Consultation");
-    if (inProgress) {
-      await supabase.from("visits").update({ status: "Completed", completed_at: new Date().toISOString() }).eq("id", inProgress.id);
+    setSavedMsg("");
+    try {
+      const consultation = await submission.current.save({
+        p_patient_id: selected.id,
+        p_visit_id: selectedVisitId,
+        p_diagnosis: diagnosis.trim(),
+        p_notes: notes.trim(),
+        p_prescriptions: prescriptionRows,
+        p_lab_tests: testNames,
+      });
+      setUnconfirmedSave(false);
+      setSelectedVisitId(null);
+      setDiagnosis("");
+      setNotes("");
+      setRx([{ key: Date.now(), drug: "", dosage: "", instructions: "" }]);
+      setLabTests("");
+      setFormError("");
+      setSavedMsg("Consultation saved as " + consultation.code);
+      loadHistory(selected.id);
       loadQueue();
+    } catch (error) {
+      setUnconfirmedSave(submission.current.hasPending());
+      setFormError(error.message);
+    } finally {
+      saveLock.current = false;
+      setSaving(false);
     }
   }
 
@@ -425,7 +460,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
                   <BedDouble size={15} color="#A13D3D" />
                   <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 14, margin: 0 }}>Ward status</h3>
                 </div>
-                {admission ? (
+                {historyLoading || historyError ? <p>Ward status unavailable while patient history is loading or cannot be verified.</p> : admission ? (
                   <div>
                     <p style={{ fontSize: 12, color: "#5B6B72", margin: "0 0 10px" }}>
                       Admitted since <strong>{admission.admitted_at?.slice(0, 10)}</strong>
@@ -452,7 +487,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
                     <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 14, margin: 0 }}>Referrals</h3>
                   </div>
                   {!showReferralForm && (
-                    <button className="wl-btn" onClick={() => setShowReferralForm(true)} style={{ background: "#7C5CBF", color: "#fff", fontSize: 12, padding: "6px 10px" }}>
+                    <button className="wl-btn" disabled={saving || unconfirmedSave || historyLoading || !!historyError} onClick={() => setShowReferralForm(true)} style={{ background: "#7C5CBF", color: "#fff", fontSize: 12, padding: "6px 10px" }}>
                       Refer to another facility
                     </button>
                   )}
@@ -485,7 +520,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
                   </form>
                 )}
 
-                {referrals.length === 0 ? (
+                {historyLoading || historyError ? <p>Referral history unavailable.</p> : referrals.length === 0 ? (
                   <p style={{ fontSize: 12, color: "#7C8A90", margin: 0 }}>No referrals recorded for this patient.</p>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -509,7 +544,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
                   <HeartPulse size={15} color="#C2467D" />
                   <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 14, margin: 0 }}>Recent vitals</h3>
                 </div>
-                {vitals.length === 0 ? (
+                {historyLoading || historyError ? <p>Vitals history unavailable.</p> : vitals.length === 0 ? (
                   <p style={{ fontSize: 12, color: "#7C8A90", margin: 0 }}>No vitals recorded for this patient yet.</p>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -533,7 +568,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
                   <FlaskConical size={15} color="#C77D2E" />
                   <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 14, margin: 0 }}>Lab results</h3>
                 </div>
-                {labResults.length === 0 ? (
+                {historyLoading || historyError ? <p>Lab history unavailable.</p> : labResults.length === 0 ? (
                   <p style={{ fontSize: 12, color: "#7C8A90", margin: 0 }}>No lab tests ordered for this patient yet.</p>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -557,6 +592,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
               <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 20, marginBottom: 16 }}>
                 <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 15, margin: "0 0 14px" }}>New consultation</h3>
                 <form onSubmit={saveConsultation}>
+                  <fieldset disabled={saving || unconfirmedSave || historyLoading || !!historyError} style={{ border: 0, margin: 0, padding: 0 }}>
                   <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Diagnosis</label>
                   <input className="wl-input" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} placeholder="e.g. Acute malaria" style={{ marginBottom: 12 }} />
 
@@ -580,9 +616,12 @@ export default function DoctorDashboard({ staff, onLogout }) {
 
                   <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Order lab tests (optional)</label>
                   <input className="wl-input" value={labTests} onChange={(e) => setLabTests(e.target.value)} placeholder="e.g. Full blood count, Malaria test (comma-separated)" style={{ marginBottom: 16 }} />
-
+                  </fieldset>
+                  {unconfirmedSave && <p role="status">Save is unconfirmed. Retry the same draft before changing patients or editing it.</p>}
+                  {historyLoading && <p role="status">Loading patient history…</p>}
+                  {historyError && <p role="alert">{historyError} <button type="button" onClick={() => loadHistory(selected.id)}>Retry history</button></p>}
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <button className="wl-btn" type="submit" style={{ background: "#2B6777", color: "#fff" }}>Save consultation</button>
+                    <button className="wl-btn" type="submit" disabled={saving || historyLoading || !!historyError} style={{ background: "#2B6777", color: "#fff" }}>{saving ? "Saving…" : unconfirmedSave ? "Retry consultation save" : "Save consultation"}</button>
                     {formError && (
                       <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#A13D3D", fontSize: 13 }}>
                         <AlertCircle size={14} /> {formError}
@@ -595,7 +634,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
 
               <div>
                 <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 15, margin: "0 0 10px" }}>Consultation history</h3>
-                {history.length === 0 ? (
+                {historyLoading || historyError ? <p>{historyLoading ? "Loading consultation history…" : "Consultation history unavailable."}</p> : history.length === 0 ? (
                   <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 24, textAlign: "center", color: "#7C8A90", fontSize: 13 }}>
                     No previous consultations for this patient.
                   </div>

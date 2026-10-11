@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Search, User, AlertCircle, Clock } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import Header from "./Header";
+import { createVitalsSubmission, emptyVitals, vitalsPayload } from "../clinical/vitalsSubmission";
 
 export default function NurseDashboard({ staff, onLogout }) {
   const [patients, setPatients] = useState([]);
@@ -9,68 +10,76 @@ export default function NurseDashboard({ staff, onLogout }) {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [history, setHistory] = useState([]);
-  const [form, setForm] = useState({ bp: "", temp: "", pulse: "", weight: "" });
+  const [form, setForm] = useState(emptyVitals);
   const [formError, setFormError] = useState("");
   const [savedMsg, setSavedMsg] = useState("");
+  const [patientsError, setPatientsError] = useState("");
+  const [patientsLoading, setPatientsLoading] = useState(true);
+  const [queueError, setQueueError] = useState("");
+  const [historyError, setHistoryError] = useState("");
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [unconfirmed, setUnconfirmed] = useState(false);
+  const busy = useRef(false);
+  const mounted = useRef(true);
+  const historyRequest = useRef(0);
+  const submission = useRef(null);
+  if (!submission.current) submission.current = createVitalsSubmission(supabase);
+  const locked = saving || unconfirmed;
 
+  async function loadPatients() {
+    setPatientsLoading(true); setPatientsError("");
+    try {
+      const { data, error } = await supabase.from("patients").select("*").order("name");
+      if (error || !Array.isArray(data)) throw new Error("Patients unavailable");
+      if (mounted.current) setPatients(data);
+    } catch { if (mounted.current) setPatientsError("Patient list could not be loaded. Retry before selecting a patient."); }
+    finally { if (mounted.current) setPatientsLoading(false); }
+  }
+  async function loadQueue() {
+    try {
+      const { data, error } = await supabase.from("visits").select("*, patients(id, name, code)")
+        .in("status", ["Waiting", "In Consultation"]).order("checked_in_at", { ascending: true });
+      if (error || !Array.isArray(data)) throw new Error("Queue unavailable");
+      if (mounted.current) { setQueue(data); setQueueError(""); }
+    } catch { if (mounted.current) setQueueError("Queue could not be loaded. Displayed entries may be out of date."); }
+  }
   useEffect(() => {
-    supabase.from("patients").select("*").order("name").then(({ data }) => setPatients(data || []));
-    loadQueue();
+    mounted.current = true; loadPatients(); loadQueue();
+    return () => { mounted.current = false; historyRequest.current += 1; };
   }, []);
 
-  async function loadQueue() {
-    const { data } = await supabase
-      .from("visits")
-      .select("*, patients(id, name, code)")
-      .in("status", ["Waiting", "In Consultation"])
-      .order("checked_in_at", { ascending: true });
-    setQueue(data || []);
-  }
-
-  const selected = patients.find((p) => p.id === selectedId) || null;
-
+  const selected = patients.find(p => p.id === selectedId) || null;
   async function loadHistory(patientId) {
-    const { data } = await supabase.from("vitals").select("*").eq("patient_id", patientId).order("recorded_at", { ascending: false });
-    setHistory(data || []);
+    const request = ++historyRequest.current;
+    setHistoryLoading(true); setHistoryError("");
+    try {
+      const { data, error } = await supabase.from("vitals").select("*").eq("patient_id", patientId).order("recorded_at", { ascending: false });
+      if (request !== historyRequest.current || !mounted.current) return;
+      if (error || !Array.isArray(data)) throw new Error("History unavailable");
+      setHistory(data);
+    } catch { if (request === historyRequest.current && mounted.current) setHistoryError("Vitals history could not be loaded. Retry before recording new readings."); }
+    finally { if (request === historyRequest.current && mounted.current) setHistoryLoading(false); }
   }
-
   function selectPatient(id) {
-    setSelectedId(id);
-    setForm({ bp: "", temp: "", pulse: "", weight: "" });
-    setFormError("");
-    setSavedMsg("");
-    loadHistory(id);
+    if (busy.current || submission.current.hasPending() || patientsLoading || patientsError) return;
+    setSelectedId(id); setHistory([]); setForm(emptyVitals()); setFormError(""); setSavedMsg(""); loadHistory(id);
   }
-
   async function saveVitals(e) {
     e.preventDefault();
-    if (!selected) return;
-    if (!form.bp.trim() && !form.temp.trim() && !form.pulse.trim() && !form.weight.trim()) {
-      setFormError("Enter at least one reading.");
-      return;
-    }
-    const { data, error } = await supabase
-      .from("vitals")
-      .insert({
-        patient_id: selected.id,
-        bp: form.bp.trim(),
-        temperature: form.temp.trim() || null,
-        pulse: form.pulse.trim() || null,
-        weight: form.weight.trim() || null,
-        recorded_by: staff.id,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      setFormError(error.message);
-      return;
-    }
-    setForm({ bp: "", temp: "", pulse: "", weight: "" });
-    setFormError("");
-    setSavedMsg("Vitals logged as " + data.code);
-    setTimeout(() => setSavedMsg(""), 3000);
-    loadHistory(selected.id);
+    if (!selected || busy.current || (!submission.current.hasPending() && (historyLoading || historyError))) return;
+    let payload;
+    try { payload = vitalsPayload(selected.id, form); } catch (error) { setFormError(error.message); return; }
+    busy.current = true; setSaving(true); setFormError(""); setSavedMsg("");
+    try {
+      const data = await submission.current.save(payload);
+      if (!mounted.current) return;
+      setUnconfirmed(false); setForm(emptyVitals()); setSavedMsg("Vitals logged as " + data.code);
+      setHistory(rows => [data, ...rows.filter(row => row.id !== data.id)]);
+      loadHistory(selected.id);
+    } catch (error) {
+      if (mounted.current) { setFormError(error.message); setUnconfirmed(submission.current.hasPending()); }
+    } finally { busy.current = false; if (mounted.current) setSaving(false); }
   }
 
   const filtered = patients.filter((p) => {
@@ -84,6 +93,9 @@ export default function NurseDashboard({ staff, onLogout }) {
       <Header staff={staff} onLogout={onLogout} />
       <div id="clinic-content" role="main" tabIndex={-1} className="wl-split-page" style={{ padding: 32, maxWidth: 1000, margin: "0 auto", display: "grid", gridTemplateColumns: "280px 1fr", gap: 20 }}>
         <div>
+          {patientsLoading && <p role="status">Loading patients…</p>}
+          {patientsError && <p role="alert">{patientsError} <button type="button" className="wl-btn" disabled={locked} onClick={loadPatients}>Retry patients</button></p>}
+          {queueError && <p role="alert">{queueError} <button type="button" className="wl-btn" disabled={locked} onClick={loadQueue}>Retry queue</button></p>}
           {queue.length > 0 && (
             <div style={{ marginBottom: 18 }}>
               <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 15, margin: "0 0 10px", display: "flex", alignItems: "center", gap: 6 }}>
@@ -91,9 +103,13 @@ export default function NurseDashboard({ staff, onLogout }) {
               </h3>
               <div className="wl-card" style={{ overflow: "hidden" }}>
                 {queue.map((v, i) => (
-                  <div
+                  <button
                     key={v.id}
-                    className="wl-row"
+                    type="button"
+                    className="wl-row clinic-patient-choice"
+                    aria-label={`Select ${v.patients?.name || "patient"} from queue`}
+                    aria-pressed={selectedId === v.patient_id}
+                    disabled={locked || patientsLoading || !!patientsError}
                     onClick={() => selectPatient(v.patient_id)}
                     style={{
                       padding: "10px 14px",
@@ -102,14 +118,14 @@ export default function NurseDashboard({ staff, onLogout }) {
                       background: selectedId === v.patient_id ? "#C2467D14" : "transparent",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{v.patients?.name}</span>
                       <span className="wl-badge" style={{ background: v.status === "Waiting" ? "#C77D2E1A" : "#3D6FB41A", color: v.status === "Waiting" ? "#C77D2E" : "#3D6FB4", fontSize: 10 }}>
                         {v.status}
                       </span>
-                    </div>
-                    <div style={{ fontSize: 11, color: "#7C8A90" }}>Checked in {new Date(v.checked_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
-                  </div>
+                    </span>
+                    <span style={{ display: "block", fontSize: 11, color: "#7C8A90" }}>Checked in {new Date(v.checked_in_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                  </button>
                 ))}
               </div>
             </div>
@@ -122,11 +138,16 @@ export default function NurseDashboard({ staff, onLogout }) {
           </div>
           <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, overflow: "hidden", maxHeight: 480, overflowY: "auto" }}>
             {filtered.length === 0 ? (
-              <div style={{ padding: 20, textAlign: "center", color: "#7C8A90", fontSize: 12 }}>No patients registered yet.</div>
+              <div style={{ padding: 20, textAlign: "center", color: "#7C8A90", fontSize: 12 }}>{patientsLoading ? "Loading patients…" : patientsError ? "Patient list unavailable." : "No patients registered yet."}</div>
             ) : (
               filtered.map((p) => (
-                <div
+                <button
                   key={p.id}
+                  type="button"
+                  className="wl-row clinic-patient-choice"
+                  aria-label={`Select ${p.name} (${p.code})`}
+                  aria-pressed={selectedId === p.id}
+                  disabled={locked || patientsLoading || !!patientsError}
                   onClick={() => selectPatient(p.id)}
                   style={{
                     padding: "12px 14px",
@@ -136,9 +157,9 @@ export default function NurseDashboard({ staff, onLogout }) {
                     borderLeft: selectedId === p.id ? "3px solid #C2467D" : "3px solid transparent",
                   }}
                 >
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</div>
-                  <div style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#7C8A90" }}>{p.code}</div>
-                </div>
+                  <span style={{ display: "block", fontSize: 13, fontWeight: 600 }}>{p.name}</span>
+                  <span style={{ display: "block", fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#7C8A90" }}>{p.code}</span>
+                </button>
               ))
             )}
           </div>
@@ -164,53 +185,50 @@ export default function NurseDashboard({ staff, onLogout }) {
               <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 20, marginBottom: 16 }}>
                 <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 15, margin: "0 0 14px" }}>Log vitals</h3>
                 <form onSubmit={saveVitals}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Blood pressure</label>
-                      <input className="wl-input" value={form.bp} onChange={(e) => setForm({ ...form, bp: e.target.value })} placeholder="120/80" />
+                  <fieldset disabled={locked || historyLoading || !!historyError} style={{ border: 0, padding: 0, margin: 0 }}>
+                    <div className="wl-form-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10, marginBottom: 16 }}>
+                      {[["systolic", "Systolic pressure (mmHg)", "120"], ["diastolic", "Diastolic pressure (mmHg)", "80"],
+                        ["temp", "Temperature (°C)", "36.8"], ["pulse", "Pulse (beats/min)", "76"], ["weight", "Weight (kg)", "68"]].map(([key, label, placeholder]) => (
+                        <div key={key}><label htmlFor={`vitals-${key}`} style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 6 }}>{label}</label>
+                          <input id={`vitals-${key}`} className="wl-input" inputMode={key === "pulse" ? "numeric" : "decimal"} value={form[key]}
+                            onChange={event => setForm({ ...form, [key]: event.target.value })} placeholder={placeholder} /></div>
+                      ))}
+                      <div><label htmlFor="vitals-measured" style={{ display: "block", fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Measured at (local time)</label>
+                        <input id="vitals-measured" className="wl-input" type="datetime-local" required value={form.measuredAt} onChange={event => setForm({ ...form, measuredAt: event.target.value })} /></div>
                     </div>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Temp (°C)</label>
-                      <input className="wl-input" value={form.temp} onChange={(e) => setForm({ ...form, temp: e.target.value })} placeholder="36.8" />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Pulse (bpm)</label>
-                      <input className="wl-input" value={form.pulse} onChange={(e) => setForm({ ...form, pulse: e.target.value })} placeholder="76" />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Weight (kg)</label>
-                      <input className="wl-input" value={form.weight} onChange={(e) => setForm({ ...form, weight: e.target.value })} placeholder="68" />
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <button className="wl-btn" type="submit" style={{ background: "#C2467D", color: "#fff" }}>Save vitals</button>
+                  </fieldset>
+                  {unconfirmed && <p role="status">The save is unconfirmed. Retry these exact readings before changing patient or leaving this screen.</p>}
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <button className="wl-btn" type="submit" disabled={saving || (!unconfirmed && (historyLoading || !!historyError))} style={{ background: "#C2467D", color: "#fff" }}>{saving ? "Saving…" : unconfirmed ? "Retry vitals save" : "Save vitals"}</button>
                     {formError && (
-                      <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#A13D3D", fontSize: 13 }}>
+                      <span role="alert" style={{ display: "flex", alignItems: "center", gap: 6, color: "#A13D3D", fontSize: 13, flex: "1 1 180px", minWidth: 0, overflowWrap: "anywhere" }}>
                         <AlertCircle size={14} /> {formError}
                       </span>
                     )}
-                    {savedMsg && <span style={{ fontSize: 13, color: "#2F7D4F", fontFamily: "IBM Plex Mono, monospace" }}>{savedMsg}</span>}
+                    {savedMsg && <span role="status" style={{ fontSize: 13, color: "#2F7D4F", fontFamily: "IBM Plex Mono, monospace", overflowWrap: "anywhere" }}>{savedMsg}</span>}
                   </div>
                 </form>
               </div>
 
               <div>
                 <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 15, margin: "0 0 10px" }}>Vitals history</h3>
+                {historyLoading && <p role="status">Loading vitals history…</p>}
+                {historyError && <p role="alert">{historyError} <button className="wl-btn" type="button" disabled={locked} onClick={() => loadHistory(selected.id)}>Retry history</button></p>}
                 {history.length === 0 ? (
                   <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 24, textAlign: "center", color: "#7C8A90", fontSize: 13 }}>
-                    No vitals recorded for this patient yet.
+                    {historyLoading ? "Vitals history is loading." : historyError ? "Vitals history unavailable." : "No vitals recorded for this patient yet."}
                   </div>
                 ) : (
                   <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, overflow: "hidden" }}>
                     {history.map((v, i) => (
-                      <div key={v.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", borderBottom: i < history.length - 1 ? "1px solid #EEF1F2" : "none" }}>
+                      <div key={v.id} className="clinic-queue-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", borderBottom: i < history.length - 1 ? "1px solid #EEF1F2" : "none" }}>
                         <div style={{ fontSize: 12, color: "#5B6B72" }}>
                           {v.bp && <span style={{ marginRight: 12 }}>BP {v.bp}</span>}
-                          {v.temperature && <span style={{ marginRight: 12 }}>Temp {v.temperature}°C</span>}
-                          {v.pulse && <span style={{ marginRight: 12 }}>Pulse {v.pulse}</span>}
-                          {v.weight && <span>Weight {v.weight}kg</span>}
+                          {v.temperature != null && <span style={{ marginRight: 12 }}>Temp {v.temperature}°C</span>}
+                          {v.pulse != null && <span style={{ marginRight: 12 }}>Pulse {v.pulse} beats/min</span>}
+                          {v.weight != null && <span>Weight {v.weight}kg</span>}
                         </div>
-                        <span style={{ fontSize: 11, color: "#7C8A90" }}>{v.recorded_at?.slice(0, 10)}</span>
+                        <span style={{ fontSize: 11, color: "#7C8A90" }}>{v.measured_at ? `Measured ${new Date(v.measured_at).toLocaleString()}` : `Logged ${v.recorded_at?.slice(0, 10)} · measurement time unavailable`}</span>
                       </div>
                     ))}
                   </div>

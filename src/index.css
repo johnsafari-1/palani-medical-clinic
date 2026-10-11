@@ -78,6 +78,9 @@ button, input, select, textarea { font: inherit; }
   transition: background-color 0.15s ease;
 }
 .wl-row:hover { background: #FAFBFC; }
+.clinic-patient-choice { display: block; width: 100%; border: 0; font: inherit; text-align: left; }
+.clinic-patient-choice:disabled { cursor: not-allowed !important; opacity: 0.65; }
+.clinic-patient-choice:focus-visible { outline: 3px solid #2B6777; outline-offset: -3px; }
 
 /* ---------- Role directory cards on the login screen ---------- */
 .wl-role-card {

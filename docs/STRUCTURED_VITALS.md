@@ -6,7 +6,7 @@ This change improves Nurse capture and prepares a pure FHIR R4 mapping. It is a 
 
 The Nurse form separates systolic and diastolic pressure, labels the fixed units for temperature/pulse/weight, and records the clinician-entered measurement time separately from the database entry time. Measurement time defaults to the current local minute and must be reviewed by the user. It is converted to an instant using the browser timezone. Both BP components are required when recording BP; other readings are optional, with at least one required.
 
-The prepared invoker-rights `save_patient_vitals` RPC verifies an active Nurse/Admin, derives recorder and entry time, and saves the readings and audit event in one transaction. A request UUID and transaction advisory lock prevent duplicate saves on matching retries. A changed patient, reading, measured time or recorder cannot reuse that request ID. The browser sends no recorder or entry time.
+The applied invoker-rights `save_patient_vitals` RPC verifies an active Nurse/Admin, derives recorder and entry time, and saves the readings and audit event in one transaction. A request UUID and transaction advisory lock prevent duplicate saves on matching retries. A changed patient, reading, measured time or recorder cannot reuse that request ID. The browser sends no recorder or entry time.
 
 Private browser-write guards also protect legacy inserts: valid combined BP text is split into numeric components and the recorder/time are overridden. Legacy inserts without an actual measured time retain a null measured time. Saved readings cannot be overwritten/deleted by browser roles even if a future RLS policy grants UPDATE/DELETE. Correction workflows still need to be implemented. Privileged database owners/service roles retain maintenance authority, and their writes remain audited.
 
@@ -35,15 +35,15 @@ References checked: [HL7 R4 vital signs](https://hl7.org/fhir/R4/observation-vit
 
 ## Deployment and validation
 
-The prepared migration is `supabase/migrations/20261011114522_structured_vitals.sql`, created with the Supabase CLI. Applying it to the linked test project failed twice with `Invalid or expired requestState`. Read-only migration history and catalog checks confirmed the new RPC/columns are absent. No alternative write path was used. **Keep the frontend PR draft and unmerged until the database migration is applied and hosted checks pass.**
+The migration was applied to the linked test project `dzvaqppqwrgalmvvejab` on 11 October 2026 as `20261011123509_structured_vitals`. The CLI-created repository file was renamed to `supabase/migrations/20261011123509_structured_vitals.sql` to match the hosted version and avoid replaying it as a pending migration. Earlier attempts returned `Invalid or expired requestState`; a fresh request succeeded through the same migration tool. No alternative write path or connection reset was used. The underlying request-state failure has not been diagnosed.
 
-Local validation: 315 tests pass, production build and diff checks pass. Tests cover numeric capture, role restrictions, trusted identity, request collisions/retries, legacy compatibility, audit failure rollback, immutable browser records, non-destructive recovery, stale reads, editable/frozen drafts and LOINC/UCUM mapping. `supabase/tests/vitals.sql` passes against the inspected schema fixture, and its records/audits are rolled back. This is local fixture evidence, not hosted verification. Browser visual and signed-in end-to-end checks remain pending. The existing bundle-size warning remains.
+Local validation: 315 tests pass, production build and diff checks pass. Tests cover numeric capture, role restrictions, trusted identity, request collisions/retries, legacy compatibility, audit failure rollback, immutable browser records, non-destructive recovery, stale reads, editable/frozen drafts and LOINC/UCUM mapping. `supabase/tests/vitals.sql` also passed against the hosted test project, followed by the clinical-record, order-completion, staff-access and billing checks. All five scripts rolled back their fixtures; a follow-up check found zero remaining synthetic patients, staff or Auth users. Catalog checks confirmed all five new columns, the invoker-rights RPC and enabled write guard. Security Advisors reported only the previously deferred leaked-password warning. Browser visual and signed-in end-to-end checks remain pending. The existing bundle-size warning remains.
 
-Deployment order:
+Deployment status:
 
-1. Resolve the Supabase connection/request-state failure, apply the reviewed migration and record its actual hosted version. Align the repository filename if the migration tool assigns a different version.
-2. Run `supabase/tests/vitals.sql`, then the existing clinical-record, order-completion, staff-access and billing SQL checks against the hosted test project. Confirm no fixtures remain and check Security Advisors.
-3. Preview the Nurse form at desktop/phone widths and verify test-account save, known rejection, lost-response retry and patient-history behavior. Review/merge the frontend after these checks.
+1. Database: migration applied and repository filename aligned with hosted history.
+2. Hosted validation: vitals plus all four prior regression scripts passed; no fixtures remain and no new Security Advisor findings were reported. Rows and audit events were rolled back; sequence numbers can advance during tests.
+3. Frontend: PR #7 remains draft and unmerged. Preview the Nurse form at desktop/phone widths and verify test-account save, known rejection, lost-response retry and patient-history behavior before merge.
 
 Recovery: revert the Nurse frontend first, then `supabase/rollback/structured_vitals.sql` revokes the new RPC and removes the browser guard. All readings, captured audits, added columns and request-ID index remain. This rollback is locally tested; it is not a backup/restore guarantee.
 

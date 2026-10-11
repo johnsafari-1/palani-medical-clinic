@@ -45,7 +45,7 @@ For the order-completion changes, revert Pharmacy/Lab screens first, then use `s
 
 ## Validation
 
-Current results including the prepared structured-vitals changes: 315 tests passed, production build passed, and the full dependency audit reported zero vulnerabilities after the toolchain updates. GitHub CI also runs the tests and build on each PR. [Billing deployment and remaining limitations](BILLING_INTEGRITY.md) records the applied billing migration and its tested recovery procedure.
+Current results including the structured-vitals draft PR: 315 tests passed, production build passed, and the full dependency audit reported zero vulnerabilities after the toolchain updates. GitHub CI also runs the tests and build on each PR. [Billing deployment and remaining limitations](BILLING_INTEGRITY.md) records the applied billing migration and its tested recovery procedure.
 
 `npm test` covers the existing Auth/route behavior, doctor-screen saves and history races, retry IDs, and real PostgreSQL semantics through PGlite. A schema-only fixture captures the inspected project's tables, constraints and policies; it contains mock Auth and no patient records, and is not a production restore or fresh-project baseline.
 
@@ -67,4 +67,4 @@ Order-completion tests also verify direct browser writes cannot alter prescribed
 
 Primary technical references: [Kenya Core IG 1.0.0, FHIR R4](https://fhir.dha.go.ke/ig/core/), [DHA certification portal](https://certification.dha.go.ke/), [HL7 R4 security](https://hl7.org/fhir/R4/security.html), [FHIR validation](https://hl7.org/fhir/R4/validation.html), [Supabase database functions](https://supabase.com/docs/guides/database/functions). The full current DHA certification checklist still needs to be obtained and mapped to evidence.
 
-The structured-vitals increment is prepared separately on `feature/structured-vitals`. Its migration is not applied because of a Supabase request-state error. See [structured vitals](STRUCTURED_VITALS.md) for validation and deployment order.
+The structured-vitals increment is on `feature/structured-vitals` in draft PR #7. Its migration was applied as `20261011123509_structured_vitals`; hosted vitals and all four prior SQL regression checks passed with no fixtures remaining. The fresh migration request succeeded after earlier Supabase request-state errors; their underlying cause remains undiagnosed. Browser review is pending before frontend merge. See [structured vitals](STRUCTURED_VITALS.md) for validation and deployment status.

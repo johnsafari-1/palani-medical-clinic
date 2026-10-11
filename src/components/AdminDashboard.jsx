@@ -35,10 +35,8 @@ export default function AdminDashboard({ staff, onLogout }) {
   }, []);
 
   async function callStaffFunction(action, payload) {
-    const { data: sessionData } = await supabase.auth.getSession();
     return supabase.functions.invoke(STAFF_FUNCTION, {
       body: { action, ...payload },
-      headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
     });
   }
 

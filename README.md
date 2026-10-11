@@ -1,54 +1,77 @@
-# Palani Medical Clinic — staff management prototype
+# Palani Medical Clinic
 
-A role-based staff management system built for Palani Medical Clinic. Staff sign in with their own login and see a dashboard built for their job — front desk, doctor, nurse, lab, pharmacy, or billing.
+A React/Vite clinic workflow prototype using Supabase Auth, PostgreSQL Row Level Security (RLS), and an administrator-only staff management Edge Function.
 
-This is an early working prototype, not a production system. See **Status** below before using it with real patient data.
+## Run locally
 
-## What it does
-
-One login screen, seven different experiences depending on who's signed in:
-
-| Role | What they can do |
-|---|---|
-| **Administrator** | Create and remove staff accounts, assign roles |
-| **Receptionist** | Register new patients and search existing ones |
-| **Doctor** | Look up a patient, record a diagnosis, write prescriptions, order lab tests |
-| **Nurse** | Log vitals (blood pressure, temperature, pulse, weight) for a patient and view their history |
-| **Laboratory Technician** | See pending test orders from doctors, enter results, mark complete |
-| **Pharmacist** | See prescriptions waiting to be filled, mark them dispensed |
-| **Cashier** | Bill a visit (consultation fee + prescribed drugs), generate an invoice, mark it paid |
-
-The roles connect to each other the way they would in a real clinic: a doctor's prescription shows up directly in the pharmacist's queue, a doctor's lab order shows up in the lab technician's queue, and a completed visit shows up in the cashier's billing queue — nothing is re-typed between departments.
-
-## Status
-
-**Prototype stage.** This proves out the workflow and the user experience. Before it touches real patient data, it needs:
-
-- A real backend and database (currently data is stored through a browser-based storage API, not a proper server)
-- Password hashing and secure authentication (passwords are currently stored in plain text)
-- HTTPS and proper access controls
-- Audit logging (who viewed or changed what, and when)
-- Compliance review for local health data regulations
-
-## Running it
-
-This is a single React component (`palani-medical-clinic-login.jsx`). It's built to run inside Claude's artifact environment, where it has access to a storage API for saving data. To turn this into a standalone app that runs anywhere, it needs to be wired into a normal React project with a real backend — that's the next phase of work.
-
-**First-time login:** username `admin`, password `admin123`. Use the Admin account to create real staff logins for each department.
-
-## Roadmap
-
-- [ ] Configurable price list for billing (instead of the cashier typing prices by hand)
-- [ ] Appointment booking (Receptionist)
-- [ ] Bed/ward management (Nurse)
-- [ ] Inventory tracking (Pharmacist)
-- [ ] Move from browser storage to a real backend + database
-- [ ] Proper authentication and security hardening
-
-## Project structure
-
-```
-palani-medical-clinic-login.jsx   # Full prototype: login, all 7 role dashboards
+```powershell
+cd C:\palani-app
+npm ci
+Copy-Item .env.example .env
+# Set the publishable key in .env using Supabase Dashboard > Settings > API Keys.
+npm run dev
 ```
 
-As the project grows past a single file, it will move to a standard structure with separate components, a backend API, and a database schema.
+Environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `VITE_SUPABASE_URL` | Supabase project URL |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Public browser key, recommended |
+| `VITE_SUPABASE_ANON_KEY` | Supported fallback for existing deployments |
+
+Never put a Supabase secret or service-role key in a `VITE_` variable. Secrets for `quick-handler` remain on Supabase's servers.
+
+Staff use their assigned username and password. The app maps the username to `username@palani.local`; these are internal login identifiers, not deliverable email addresses. New accounts and password resets are managed by an active Administrator. There is no public registration or default administrator password.
+
+## Protected routes
+
+| Staff role | Dashboard URL |
+| --- | --- |
+| Admin | `/app/admin` |
+| Receptionist | `/app/reception` |
+| Doctor | `/app/doctor` |
+| Nurse | `/app/nursing` |
+| Lab Technician | `/app/lab` |
+| Pharmacist | `/app/pharmacy` |
+| Cashier | `/app/billing` |
+
+`/` and `/app` open the assigned dashboard after access verification. Signed-out users visiting a dashboard go to `/login`. A signed-in staff member visiting another department sees an access-denied page with a link to their own dashboard.
+
+`AuthProvider` validates the access token with `auth.getUser()` and reads the caller's `staff` profile before rendering protected content. Roles come from the database, not the login screen's role cards or user-editable metadata. Missing, inactive, and unsupported staff profiles are blocked. Verification failures offer retry and sign out. Pending responses cannot restore another account's dashboard after account switches or logout.
+
+Staff access is rechecked on Auth events, window focus, visibility restoration, and every minute while the page is visible. RLS checks active membership for each database statement, so deactivation blocks database access immediately, even if an old access token still exists.
+
+## Database and Edge Function
+
+The existing linked project is `dzvaqppqwrgalmvvejab` (`palani-medical-clinic`).
+
+The hardening migration is `supabase/migrations/20261011044601_enforce_active_staff_access.sql`. It has already been applied to this linked project. It adds restrictive active-staff checks to the 12 existing clinic tables, preserves department-specific permissions, limits staff directory reads to the caller or an active Admin, and removes public execution privileges from internal trigger functions.
+
+The unexposed `private.active_staff_role()` function uses narrowly scoped definer privileges to read only the caller's active role without recursing through staff RLS. Its public compatibility wrapper uses invoker privileges. The existing clinic workflow still shares clinical reads between active staff; this change does not introduce patient assignment or facility-level isolation.
+
+`create-staff-function.ts` matches the deployed `quick-handler` function and supports account creation, deactivation, reactivation, and password resets. Every request validates the caller through Auth and requires an active Admin profile. JWT verification remains enabled. The active-Admin check was deployed as version 5 on 11 October 2026.
+
+This repository's original `palani_clinic_schema.sql` is a historical, incomplete snapshot. The new migration hardens an existing schema; it is not a fresh-project baseline. Do not run the historical schema over the deployed database or reset the linked project. A complete baseline is needed before provisioning a separate fresh database.
+
+## Validate
+
+```powershell
+npm test
+npm run build
+npm audit --omit=dev
+```
+
+`supabase/tests/staff_access.sql` tests the live policies using transaction-scoped fixtures and `authenticated`/`anon` database roles. Run it as the database owner in Supabase SQL Editor; all fixture users, patient records, and writes are rolled back. It tests all seven staff roles, missing membership, inactive Admin access, anonymous access, permitted patient writes, denied writes, and role escalation.
+
+Validation on 11 October 2026: 96 frontend tests passed; production build passed; runtime dependency audit reported no vulnerabilities; database access tests passed. Supabase Security Advisors still reports leaked-password protection disabled. Enable it in Auth password security settings if available for the project's plan.
+
+## Vercel
+
+Keep the project URL and public key configured in the Vercel environment. Existing deployments using `VITE_SUPABASE_ANON_KEY` continue to work. `vercel.json` provides the SPA fallback required when opening or refreshing a dashboard URL directly.
+
+The Supabase policy and Edge Function changes are live. The frontend route changes require deploying this branch or merging its pull request into the Vercel production branch. Verify sign-in with an existing staff account after deployment, refresh its dashboard URL, test another department's URL, and sign out.
+
+## Scope
+
+Use test data while the prototype is developed. Auth and RLS protections alone do not establish healthcare compliance or production readiness. Broader audit coverage, clinical data permissions, workflow integrity, and operational controls need separate review.

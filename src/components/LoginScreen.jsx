@@ -18,17 +18,23 @@ export default function LoginScreen() {
 
   async function handleLogin(e) {
     e.preventDefault();
+    if (loading) return;
     setError("");
     setLoading(true);
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: usernameToEmail(username),
-      password,
-    });
-    setLoading(false);
-    if (authError) {
-      setError("Username or password is incorrect.");
+    try {
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: usernameToEmail(username),
+        password,
+      });
+      if (authError) {
+        setError(authError.code === "invalid_credentials" ? "Username or password is incorrect." : "Unable to sign in. Check your connection or contact your Administrator.");
+      }
+    } catch {
+      setError("Unable to sign in. Check your connection and try again.");
+    } finally {
+      setLoading(false);
     }
-    // On success, App.jsx's onAuthStateChange listener picks up the session automatically.
+    // AuthProvider verifies the user and staff membership before routing.
   }
 
   return (
@@ -43,7 +49,7 @@ export default function LoginScreen() {
 
         <form onSubmit={handleLogin}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-            <label style={{ fontSize: 13, fontWeight: 600 }}>Username</label>
+            <label htmlFor="login-username" style={{ fontSize: 13, fontWeight: 600 }}>Username</label>
             {activeRole && (
               <span className="wl-fade-in wl-badge" style={{ background: activeRole.color + "1A", color: activeRole.color }}>
                 {activeRole.label}
@@ -51,6 +57,11 @@ export default function LoginScreen() {
             )}
           </div>
           <input
+            id="login-username"
+            name="username"
+            autoComplete="username"
+            required
+            disabled={loading}
             ref={usernameRef}
             className="wl-input"
             value={username}
@@ -64,10 +75,10 @@ export default function LoginScreen() {
             </p>
           )}
           <div style={{ marginBottom: activeRole ? 6 : 16 }} />
-          <label style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>Password</label>
-          <input className="wl-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" style={{ marginBottom: 16 }} />
+          <label htmlFor="login-password" style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>Password</label>
+          <input id="login-password" name="password" autoComplete="current-password" required disabled={loading} className="wl-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" style={{ marginBottom: 16 }} />
           {error && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#A13D3D", fontSize: 13, marginBottom: 16 }}>
+            <div role="alert" style={{ display: "flex", alignItems: "center", gap: 6, color: "#A13D3D", fontSize: 13, marginBottom: 16 }}>
               <AlertCircle size={14} /> {error}
             </div>
           )}
@@ -78,7 +89,7 @@ export default function LoginScreen() {
 
         <div style={{ marginTop: 24, padding: 12, borderRadius: 8, background: "#EEF2F3", fontSize: 12, color: "#5B6B72", display: "flex", gap: 8 }}>
           <Lock size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-          <span>First time here? Create your Admin account in Supabase Auth first (see setup guide), then sign in with it here.</span>
+          <span>Use the staff login assigned by your Administrator. Contact them if you need an account or password reset.</span>
         </div>
       </div>
 

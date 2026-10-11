@@ -115,3 +115,16 @@ body { margin: 0; font-family: Inter, sans-serif; background: #F5F7F8; color: #1
 @media (max-width: 480px) {
   .wl-role-grid { grid-template-columns: 1fr !important; }
 }
+/* Auth checks never mount a dashboard before staff access is verified. */
+.wl-auth-status {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  gap: 16px;
+  color: #5B6B72;
+  font-family: Inter, sans-serif;
+}

@@ -552,9 +552,9 @@ export default function DoctorDashboard({ staff, onLogout }) {
                       <div key={v.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: "#5B6B72" }}>
                         <span>
                           {v.bp && <span style={{ marginRight: 10 }}>BP {v.bp}</span>}
-                          {v.temperature && <span style={{ marginRight: 10 }}>Temp {v.temperature}°C</span>}
-                          {v.pulse && <span style={{ marginRight: 10 }}>Pulse {v.pulse}</span>}
-                          {v.weight && <span>Weight {v.weight}kg</span>}
+                          {v.temperature != null && <span style={{ marginRight: 10 }}>Temp {v.temperature}°C</span>}
+                          {v.pulse != null && <span style={{ marginRight: 10 }}>Pulse {v.pulse} beats/min</span>}
+                          {v.weight != null && <span>Weight {v.weight}kg</span>}
                         </span>
                         <span style={{ color: "#7C8A90" }}>{v.recorded_at?.slice(0, 10)}</span>
                       </div>

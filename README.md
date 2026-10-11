@@ -66,13 +66,13 @@ npm audit --omit=dev
 
 `supabase/tests/staff_access.sql` tests the live policies using transaction-scoped fixtures and `authenticated`/`anon` database roles. Run it as the database owner in Supabase SQL Editor; all fixture users, patient records, and writes are rolled back. It tests all seven staff roles, missing membership, inactive Admin access, anonymous access, permitted patient writes, denied writes, and role escalation.
 
-Validation on 11 October 2026: 169 tests passed; production build passed; full dependency audit reported no vulnerabilities; hosted database access tests passed. Supabase Security Advisors still reports leaked-password protection disabled. This plan-dependent feature is deferred on the test project at the user's request.
+Validation on 11 October 2026 including prepared billing changes: 244 tests passed; production build passed; full dependency audit reported no vulnerabilities; prior hosted clinical and access checks passed. Billing hosted checks are pending because its migration was not applied. Supabase Security Advisors still reports leaked-password protection disabled. This plan-dependent feature is deferred on the test project at the user's request.
 
 ## Vercel
 
 Keep the project URL and public key configured in the Vercel environment. Existing deployments using `VITE_SUPABASE_ANON_KEY` continue to work. `vercel.json` provides the SPA fallback required when opening or refreshing a dashboard URL directly.
 
-The Supabase policy and Edge Function changes are live. Auth routes and atomic consultation changes have been merged into `main`; Vercel deployment and authenticated browser checks have not been verified in this session. Verify sign-in with an existing staff account after deployment, refresh its dashboard URL, test another department's URL, and sign out.
+The Supabase policy and Edge Function changes are live. Auth routes, atomic consultation and order-completion changes have been merged into `main`; Vercel deployment and authenticated browser checks have not been verified in this session. Verify sign-in with an existing staff account after deployment, refresh its dashboard URL, test another department's URL, and sign out.
 
 ## Scope
 
@@ -84,4 +84,10 @@ The doctor screen now uses `save_clinical_consultation` to save the consultation
 
 The additive migration `supabase/migrations/20261011060200_atomic_clinical_records.sql` expands audit coverage and removes browser TRUNCATE/audit-write privileges. **It was applied to the linked test Supabase project on 11 October 2026. Hosted clinical-integrity and staff-access checks passed, and synthetic test records were rolled back.** The consultation frontend was merged in PR #3. See [deployment, rollback and remaining compliance work](docs/CLINICAL_INTEGRITY.md). A compatibility rollback and post-deployment SQL checks are included.
 
-Pharmacy and Lab screens use guarded completion RPCs. Browser updates cannot alter prescribed fields, patient links or ordering fields, spoof completion actors/timestamps, or overwrite completed lab results. Save failures retain drafts; queue failures disable actions until a successful refresh. Billing-trigger updates remain supported. The migration `supabase/migrations/20261011062324_guarded_order_completion.sql` is live on the linked test project, and hosted order-completion, consultation and staff-access checks passed. The Pharmacy/Lab frontend changes are on `feature/guarded-order-completion` and require merging/deployment. A tested non-destructive rollback and transaction-scoped hosted verification script are included.
+Pharmacy and Lab screens use guarded completion RPCs. Browser updates cannot alter prescribed fields, patient links or ordering fields, spoof completion actors/timestamps, or overwrite completed lab results. Save failures retain drafts; queue failures disable actions until a successful refresh. Billing-trigger updates remain supported. The migration `supabase/migrations/20261011062324_guarded_order_completion.sql` is live on the linked test project, and hosted order-completion, consultation and staff-access checks passed. The Pharmacy/Lab frontend changes were merged in PR #4. A tested non-destructive rollback and transaction-scoped hosted verification script are included.
+
+## Prepared billing changes
+
+The Cashier screen uses `create_clinic_invoice` for atomic encounter/stay and OTC invoice saves, and `record_invoice_payment` for trusted, retry-safe payment declarations. The database validates patient/source links, active catalogue prices, quantities and totals, and prevents browser overwrites of paid invoices. Drafts survive failed saves; unconfirmed submissions retain their identity for retry. Receipts escape dynamic text and reject failed/inconsistent reads. Billing queries no longer request diagnosis, admission reason or patient contact details.
+
+**The billing migration is not applied.** The Supabase migration tool failed with `Invalid or expired requestState`; read-only hosted checks confirmed no billing schema changes were made. Apply `supabase/migrations/20261011063217_atomic_billing.sql`, run `supabase/tests/billing.sql` and the prior clinical/access/order checks, then merge/deploy `feature/atomic-billing`. See [billing controls, limitations and rollback](docs/BILLING_INTEGRITY.md). Historic invoices are retained and may need an attributed correction process before payment; the change does not implement payment-provider verification or DHA/FHIR exchange.

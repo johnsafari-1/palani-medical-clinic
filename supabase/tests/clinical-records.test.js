@@ -35,6 +35,7 @@ beforeAll(async () => {
   await db.exec(read("fixtures/clinic-schema.sql"));
   await db.exec(read("../migrations/20261011044601_enforce_active_staff_access.sql"));
   await db.exec(migration);
+  await db.exec(read("../migrations/20261011062324_guarded_order_completion.sql"));
 }, 30000);
 beforeEach(async () => {
   await db.exec("begin");

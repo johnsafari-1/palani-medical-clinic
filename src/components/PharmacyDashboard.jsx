@@ -1,21 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../supabaseClient";
 import Header from "./Header";
+import AllergyPanel from "./AllergyPanel";
 import { useClinicalQueue } from "../clinical/useClinicalQueue";
 
 export default function PharmacyDashboard({ staff, onLogout }) {
   const { rows: prescriptions, setRows: setPrescriptions, loading, error: queueError, reload } = useClinicalQueue(
-    "prescriptions", "*, consultations(code, created_at, patients(name, code))", "id",
+    "prescriptions", "*, consultations(patient_id, code, created_at, patients(name, code))", "id",
   );
   const [savingId, setSavingId] = useState(null);
   const [actionError, setActionError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const busy = useRef(false);
+  const allergyReadiness = useRef({});
+  const [allergyReady, setAllergyReady] = useState({});
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   async function dispense(id) {
-    if (busy.current || loading || queueError) return;
+    if (busy.current || loading || queueError || allergyReadiness.current[id] !== true) return;
     busy.current = true;
     setSavingId(id); setActionError(""); setActionMessage("");
     try {
@@ -61,12 +64,14 @@ export default function PharmacyDashboard({ staff, onLogout }) {
                 <div style={{ padding: 24, textAlign: "center", color: "#7C8A90", fontSize: 13 }}>No prescriptions waiting.</div>
               ) : (
                 pending.map((p, i) => (
-                  <div key={p.id} className="clinic-queue-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: i < pending.length - 1 ? "1px solid #EEF1F2" : "none" }}>
+                  <div key={p.id} style={{ padding: "14px 18px", borderBottom: i < pending.length - 1 ? "1px solid #EEF1F2" : "none" }}>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{p.consultations?.patients?.name} <span style={{ color: "#7C8A90", fontWeight: 400 }}>· {p.drug} {p.dosage && `— ${p.dosage}`}</span></div>
                       <div style={{ fontFamily: "IBM Plex Mono, monospace", fontSize: 11, color: "#7C8A90" }}>{p.consultations?.patients?.code} · {p.instructions}</div>
                     </div>
-                    <button className="wl-btn" disabled={!!savingId || !!queueError} onClick={() => dispense(p.id)} style={{ background: "#3D6FB4", color: "#fff", whiteSpace: "nowrap" }}>
+                    {p.consultations?.patient_id ? <AllergyPanel patientId={p.consultations.patient_id} staff={staff} readOnly disabled={!!savingId}
+                      onAvailabilityChange={available => {allergyReadiness.current[p.id]=available;setAllergyReady(current => ({...current,[p.id]:available}));}} /> : <p role="alert">Patient identity unavailable for allergy review. Refresh the queue.</p>}
+                    <button className="wl-btn" disabled={!!savingId || !!queueError || !allergyReady[p.id]} onClick={() => dispense(p.id)} style={{ background: "#3D6FB4", color: "#fff", whiteSpace: "nowrap" }}>
                       {savingId === p.id ? "Recording…" : "Mark dispensed"}
                     </button>
                   </div>

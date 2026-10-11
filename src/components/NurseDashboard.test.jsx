@@ -12,7 +12,7 @@ beforeEach(() => {
   historyRows = [];historyError = false;patientsError = false;queueError = false;delayedHistory = null;supabase.rpc.mockReset();
   supabase.from.mockImplementation(table => {
     let patientId;
-    const query = { select: () => query, order: () => query, in: () => query, eq: (_column, value) => { patientId = value;return query; },
+    const query = { select: () => query, order: () => query, limit: () => query, in: () => query, eq: (_column, value) => { patientId = value;return query; },
       then: (resolve, reject) => {
         if (table === "vitals" && patientId === "patient-a" && delayedHistory) return delayedHistory.promise.then(resolve, reject);
         const failed = table === "vitals" ? historyError : table === "patients" ? patientsError : queueError;

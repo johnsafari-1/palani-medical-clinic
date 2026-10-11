@@ -10,10 +10,10 @@ const patients = [
   { id: "patient-a", name: "Synthetic Alice", code: "PT-A", dob: "2000-01-01", gender: "Other", phone: "test" },
   { id: "patient-b", name: "Synthetic Bob", code: "PT-B", dob: "2001-01-01", gender: "Other", phone: "test" },
 ];
-let historyFailure, historyDeferred;
+let historyFailure, historyDeferred, allergyFailure, testPatients;
 const defer = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 beforeEach(() => {
-  historyFailure = false; historyDeferred = null;
+  historyFailure = false; historyDeferred = null; allergyFailure = false; testPatients = patients;
   supabase.rpc.mockReset();
   supabase.from.mockImplementation(table => {
     let patientId, single = false;
@@ -25,9 +25,9 @@ beforeEach(() => {
         if (table === "consultations" && historyDeferred && patientId === "patient-a") {
           return historyDeferred.promise.then(resolve, reject);
         }
-        const result = table === "consultations" && historyFailure
+        const result = (table === "consultations" && historyFailure) || (table === "patient_allergy_reviews" && allergyFailure)
           ? { data: null, error: { message: "Synthetic failure" } }
-          : { data: table === "patients" ? patients : single ? null : [], error: null };
+          : { data: table === "patients" ? testPatients : single ? null : [], error: null };
         return Promise.resolve(result).then(resolve, reject);
       },
     };
@@ -42,6 +42,30 @@ async function selectAlice() {
   fireEvent.change(screen.getByPlaceholderText("e.g. Acute malaria"), { target: { value: "Synthetic diagnosis" } });
 }
 describe("doctor consultation submission", () => {
+  it("blocks new consultation writes while allergy history is unavailable", async () => {
+    allergyFailure = true;
+    render(<DoctorDashboard staff={{ id: "doctor", role: "Doctor" }} onLogout={() => {}} />);
+    fireEvent.click(await screen.findByText("Synthetic Alice"));
+    expect(await screen.findByText("Allergy history unavailable. Retry before relying on this status.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save consultation" }).disabled).toBe(true);
+    allergyFailure = false; fireEvent.click(screen.getByRole("button", { name: "Refresh allergies" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save consultation" }).disabled).toBe(false));
+  });
+  it("locks patient changes and consultation writes during an unconfirmed allergy submission", async () => {
+    testPatients = patients.map((p,i) => ({...p,id:`00000000-0000-4000-8000-00000000000${i+1}`}));
+    supabase.rpc.mockRejectedValue(new Error("Lost allergy response"));
+    render(<DoctorDashboard staff={{ id: "00000000-0000-4000-8000-000000000003", role: "Doctor" }} onLogout={() => {}} />);
+    fireEvent.click(await screen.findByText("Synthetic Alice"));
+    const start = await screen.findByRole("button", { name: "Record allergy assessment" });
+    await waitFor(() => expect(start.disabled).toBe(false)); fireEvent.click(start);
+    fireEvent.change(screen.getByLabelText("Assessment"), {target:{value:"unknown"}});
+    fireEvent.change(screen.getByLabelText("Review / correction reason"), {target:{value:"Initial review"}});
+    fireEvent.click(screen.getByRole("button", { name: "Save allergy review" }));
+    await screen.findByRole("button", { name: "Retry allergy save" });
+    fireEvent.click(screen.getByText("Synthetic Bob"));
+    expect(screen.getAllByText("Synthetic Alice")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Save consultation" }).disabled).toBe(true);
+  });
   it("uses one RPC and only clears the draft after confirmation", async () => {
     const result = defer();
     supabase.rpc.mockReturnValue(result.promise);

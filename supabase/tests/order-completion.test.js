@@ -23,6 +23,7 @@ beforeAll(async()=>{
   await db.exec(read("../migrations/20261011044601_enforce_active_staff_access.sql"));
   await db.exec(read("../migrations/20261011060200_atomic_clinical_records.sql"));
   await db.exec(migration);
+  await db.exec(read("../migrations/20261011104648_atomic_billing.sql"));
 },30000);
 beforeEach(async()=>{
   await db.exec("begin");
@@ -119,10 +120,12 @@ describe("server-controlled order completion",()=>{
     expect((await db.query("select status,result,completed_at from lab_orders where id=$1",[lab])).rows[0]).toMatchObject({status:"Pending",result:null,completed_at:null});
   });
   it("preserves billing-trigger updates under trusted definer privileges",async()=>{
+    await db.exec("reset role");
+    await db.exec("insert into price_list(name,category,price) values ('Synthetic medication','Medication',1),('Synthetic lab','Lab Test',1)");
     await role("Cashier");
-    const invoice=(await db.query("insert into invoices(patient_id,created_by) values ($1,auth.uid()) returning id",[patient])).rows[0].id;
-    await db.query("insert into invoice_items(invoice_id,label,amount,prescription_id) values ($1,'Synthetic medication',1,$2)",[invoice,rx]);
-    await db.query("insert into invoice_items(invoice_id,label,amount,lab_order_id) values ($1,'Synthetic lab',1,$2)",[invoice,lab]);
+    const invoice=(await db.query("insert into invoices(patient_id,consultation_id,total,created_by) values ($1,$2,2,auth.uid()) returning id",[patient,consultation])).rows[0].id;
+    await db.query("insert into invoice_items(invoice_id,label,quantity,unit_price,amount,prescription_id) values ($1,'Synthetic medication',1,1,1,$2)",[invoice,rx]);
+    await db.query("insert into invoice_items(invoice_id,label,quantity,unit_price,amount,lab_order_id) values ($1,'Synthetic lab',1,1,1,$2)",[invoice,lab]);
     expect((await db.query("select billed from prescriptions where id=$1",[rx])).rows[0].billed).toBe(true);
     expect((await db.query("select billed from lab_orders where id=$1",[lab])).rows[0].billed).toBe(true);
   });

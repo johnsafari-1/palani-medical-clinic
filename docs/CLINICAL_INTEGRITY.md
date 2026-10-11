@@ -29,14 +29,14 @@ The migration `supabase/migrations/20261011060200_atomic_clinical_records.sql` w
 
 The order-completion migration `supabase/migrations/20261011062324_guarded_order_completion.sql` was also applied to the linked test project on 11 October 2026. Hosted order-completion checks passed, consultation/staff checks passed again with the guards installed, and a follow-up check found zero remaining order-test patients, staff or Auth users.
 
-The atomic consultation frontend was merged into `main` in PR #3. Its Vercel deployment and authenticated browser behavior have not been verified in this session. The new Pharmacy/Lab frontend changes are on `feature/guarded-order-completion` and still require merging/deployment. Existing pending-to-completed direct updates receive the database protections, but the old Pharmacy/Lab UI still lacks the new failure/retry feedback. No existing records were backfilled or deleted.
+The consultation and Pharmacy/Lab frontend changes were merged into `main` in PRs #3 and #4. Vercel deployment and authenticated browser behavior have not been verified in this session. Existing pending-to-completed direct updates receive the database protections; the new failure/retry feedback requires those merged frontend changes to be deployed. No existing records were backfilled or deleted.
 
 Deployment status:
 
 1. Database migrations: applied and recorded as `20261011060200_atomic_clinical_records` and `20261011062324_guarded_order_completion`.
 2. Hosted checks: `supabase/tests/clinical_records.sql`, `supabase/tests/staff_access.sql` and `supabase/tests/order_completion.sql` passed using transaction-scoped fixtures. Rows and audit events were rolled back; sequence numbers can advance during tests.
 3. Security Advisors: no new findings; leaked-password protection remains disabled. The user has deferred this plan-dependent feature on the current test project; no subscription or Auth setting changes are part of this implementation. See [password security settings](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).
-4. Frontend: merge/deploy `feature/guarded-order-completion`, then verify Pharmacy/Lab save, retry and refresh with test accounts. Verify the merged Doctor save/retry plus Nurse, billing and Admin audit screens. These authenticated browser checks are pending.
+4. Frontend: verify deployment of the merged changes and check Pharmacy/Lab save, retry and refresh with test accounts. Verify Doctor save/retry plus Nurse, billing and Admin audit screens. These authenticated browser checks are pending.
 5. Recovery evidence: backup availability and recovery have not been verified. Establish a recoverable backup/restore point before using real patient data or treating the system as production-ready.
 
 If deployment fails, revert the frontend first. `supabase/rollback/atomic_clinical_records.sql` disables browser execution of the new RPC and restores the nine prior audit triggers. It retains all records, captured audit events, added columns and unique indexes, and keeps the safer TRUNCATE/audit-write revocations. The rollback is locally tested; it is not a replacement for backups. Prefer fixing a specific defect while retaining the stronger audit coverage.
@@ -45,7 +45,7 @@ For the order-completion changes, revert Pharmacy/Lab screens first, then use `s
 
 ## Validation
 
-Current results: 169 tests passed, production build passed, and the full dependency audit reported zero vulnerabilities after the toolchain updates. GitHub CI also runs the tests and build on each PR.
+Current results including the prepared billing changes: 244 tests passed, production build passed, and the full dependency audit reported zero vulnerabilities after the toolchain updates. GitHub CI also runs the tests and build on each PR. [Billing deployment and remaining limitations](BILLING_INTEGRITY.md) records the unapplied billing migration and its tested recovery procedure.
 
 `npm test` covers the existing Auth/route behavior, doctor-screen saves and history races, retry IDs, and real PostgreSQL semantics through PGlite. A schema-only fixture captures the inspected project's tables, constraints and policies; it contains mock Auth and no patient records, and is not a production restore or fresh-project baseline.
 
@@ -58,8 +58,8 @@ Order-completion tests also verify direct browser writes cannot alter prescribed
 | Area | Next implementation/evidence |
 | --- | --- |
 | Clinical permissions | Least-privilege reads; clinician/patient assignment; actor protections in other workflows. Existing shared clinical reads remain broad. Pharmacy queries no longer request diagnosis, but this does not enforce column-level read isolation. |
-| Other transactions | Atomic billing/OTC, admission/discharge and referral workflows; attributed lab corrections and dispensing reversals; partial dispensing and inventory. |
-| Safe output | Complete the separate printing hardening work, including referral letters. |
+| Other transactions | Apply/verify the prepared atomic billing/OTC changes; admission/discharge and referral workflows; attributed lab corrections, invoice adjustments and dispensing reversals; partial dispensing and inventory. |
+| Safe output | Deploy the prepared receipt hardening, then complete the separate patient-summary, reports and referral printing work. |
 | Clinical safety data | Structured allergy status, coded diagnoses/medications/tests, units and result interpretation, clinician identity and facility identifiers. |
 | HL7 FHIR exchange | Kenya Core R4 mappings, applicable domain profiles, references and terminology validation, an authenticated API with an honest CapabilityStatement, and integration tests against the DHA/partner sandbox. No FHIR endpoint exists yet. |
 | Audit evidence | Access/print/export events, reliable privileged-system attribution, retention policy and off-database integrity controls. Current row snapshots include clinical data and require the same access/retention protections. |

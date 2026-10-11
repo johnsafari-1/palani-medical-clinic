@@ -1,6 +1,6 @@
 # Clinic workspace UI
 
-This branch refreshes the sign-in screen and shared layout for the seven existing staff roles. It is based on merged main and can be reviewed separately from the pending billing migration in PR #5.
+This branch refreshes the sign-in screen and shared layout for the seven existing staff roles. The UI was delivered in PR #6 and merged into main. Billing PR #5 adds its separately verified database controls.
 
 ## Changes
 
@@ -29,4 +29,4 @@ Use synthetic staff and patient records only. Configure the existing Vite Supaba
 - With test accounts, confirm account-based role routing, sign out, and that menu interaction preserves an in-progress Doctor consultation.
 - Inspect forms, populated queues, loading/empty/error states and keyboard focus at browser zoom 200%.
 
-Keep this PR draft until browser review is complete. Merge and deployment are separate steps.
+The user authorized merging after automated validation. Browser visual review remains pending and should be completed on the deployed app using test accounts.

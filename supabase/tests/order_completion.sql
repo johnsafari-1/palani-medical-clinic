@@ -5,6 +5,7 @@ declare
   doctor uuid:=gen_random_uuid(); pharmacist uuid:=gen_random_uuid(); technician uuid:=gen_random_uuid(); cashier uuid:=gen_random_uuid();
   patient uuid:=gen_random_uuid(); consultation uuid:=gen_random_uuid(); rx uuid:=gen_random_uuid(); lab uuid:=gen_random_uuid();
   first_result jsonb; replay jsonb; rejected boolean; invoice uuid; scenario text; scenario_id uuid;
+  medication_price uuid:=gen_random_uuid(); lab_price uuid:=gen_random_uuid();
 begin
   perform set_config('request.jwt.claim.sub','',true);
   insert into auth.users(id,aud,role,email,created_at,updated_at)
@@ -23,6 +24,8 @@ begin
   values(rx,consultation,'Synthetic drug','Test dose','Test instructions');
   insert into public.lab_orders(id,patient_id,consultation_id,test_name,ordered_by)
   values(lab,patient,consultation,'Synthetic test',doctor);
+  insert into public.price_list(id,name,category,price) values
+    (medication_price,'Synthetic medication','Medication',1),(lab_price,'Synthetic lab','Lab Test',1);
 
   perform set_config('request.jwt.claim.sub',pharmacist::text,true);
   perform set_config('role','authenticated',true);
@@ -59,9 +62,9 @@ begin
   if not rejected then raise exception 'Completed result was overwritten';end if;
 
   perform set_config('request.jwt.claim.sub',cashier::text,true);
-  insert into public.invoices(patient_id,created_by) values(patient,cashier) returning id into invoice;
-  insert into public.invoice_items(invoice_id,label,amount,prescription_id) values(invoice,'Synthetic medication',1,rx);
-  insert into public.invoice_items(invoice_id,label,amount,lab_order_id) values(invoice,'Synthetic lab',1,lab);
+  insert into public.invoices(patient_id,consultation_id,total,created_by) values(patient,consultation,2,cashier) returning id into invoice;
+  insert into public.invoice_items(invoice_id,label,quantity,unit_price,amount,prescription_id) values(invoice,'Synthetic medication',1,1,1,rx);
+  insert into public.invoice_items(invoice_id,label,quantity,unit_price,amount,lab_order_id) values(invoice,'Synthetic lab',1,1,1,lab);
   if not (select billed from public.prescriptions where id=rx) or not (select billed from public.lab_orders where id=lab) then
     raise exception 'Billing trigger no longer marks ordered items billed';
   end if;

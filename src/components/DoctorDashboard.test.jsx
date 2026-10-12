@@ -10,24 +10,29 @@ const patients = [
   { id: "patient-a", name: "Synthetic Alice", code: "PT-A", dob: "2000-01-01", gender: "Other", phone: "test" },
   { id: "patient-b", name: "Synthetic Bob", code: "PT-B", dob: "2001-01-01", gender: "Other", phone: "test" },
 ];
-let historyFailure, historyDeferred, allergyFailure, testPatients;
+let historyFailure, historyDeferred, allergyFailure, testPatients, savedReferrals, referralSave, referralInsert;
 const defer = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 beforeEach(() => {
   historyFailure = false; historyDeferred = null; allergyFailure = false; testPatients = patients;
+  savedReferrals = []; referralSave = null; referralInsert = vi.fn();
   supabase.rpc.mockReset();
   supabase.from.mockImplementation(table => {
-    let patientId, single = false;
+    let patientId, single = false, inserting = false;
     const query = {
-      select: () => query, order: () => query, in: () => query, limit: () => query,
+      select: () => query, order: () => query, in: () => query, limit: () => query, range: () => query,
+      insert: payload => { inserting = true; referralInsert(payload); return query; },
+      single: () => { single = true; return query; },
       eq: (column, value) => { if (column === "patient_id") patientId = value; return query; },
       maybeSingle: () => { single = true; return query; },
       then: (resolve, reject) => {
+        if (table === "staff") return Promise.resolve({data:{id:"doctor",role:"Doctor",active:true}}).then(resolve,reject);
+        if (table === "referrals" && inserting) return referralSave.promise.then(resolve,reject);
         if (table === "consultations" && historyDeferred && patientId === "patient-a") {
           return historyDeferred.promise.then(resolve, reject);
         }
         const result = (table === "consultations" && historyFailure) || (table === "patient_allergy_reviews" && allergyFailure)
           ? { data: null, error: { message: "Synthetic failure" } }
-          : { data: table === "patients" ? testPatients : single ? null : [], error: null };
+          : { data: table === "patients" ? testPatients : table === "referrals" ? (single ? savedReferrals[0] : savedReferrals) : single ? null : [], error: null, count: 0 };
         return Promise.resolve(result).then(resolve, reject);
       },
     };
@@ -124,5 +129,43 @@ describe("doctor consultation submission", () => {
     await act(async () => historyDeferred.resolve({ data: [{ id: "old", diagnosis: "Alice-only diagnosis", prescriptions: [] }], error: null }));
     expect(screen.queryByText("Alice-only diagnosis")).toBeNull();
     expect(screen.getAllByText("Synthetic Bob")).toHaveLength(2);
+  });
+});
+
+const savedReferral = { id: "ref-1", patient_id: "patient-a", direction: "Outgoing", code: "REF-TEST", created_by: "doctor", facility_name: "Synthetic Facility", reason: "Synthetic reason", created_at: "2026-10-11T10:00:00Z" };
+const printWindow = () => ({ opener:{},closed:false,document:{open:vi.fn(),write:vi.fn(),close:vi.fn()},focus:vi.fn(),print:vi.fn(),close:vi.fn() });
+async function saveReferral() {
+  referralSave = defer(); await selectAlice();
+  fireEvent.click(screen.getByRole('button',{name:'Refer to another facility'}));
+  fireEvent.change(screen.getByPlaceholderText('Facility name'),{target:{value:'Synthetic Facility'}});
+  fireEvent.change(screen.getByPlaceholderText('Reason for referral'),{target:{value:'Synthetic reason'}});
+  const form = screen.getByRole('button',{name:'Save referral'}).closest('form');
+  fireEvent.submit(form); fireEvent.submit(form);
+  expect(referralInsert).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByText('Synthetic Bob'));expect(screen.getAllByText('Synthetic Alice')).toHaveLength(2);
+  savedReferrals = [savedReferral];
+  await act(async()=>referralSave.resolve({data:savedReferral,error:null}));
+  return screen.findByRole('button',{name:'Print saved referral'});
+}
+describe('saved referral printing',()=>{
+  it('saves once then retries a blocked popup without inserting another referral',async()=>{
+    vi.spyOn(window,'open').mockReturnValue(null);
+    const button = await saveReferral();expect(window.open).not.toHaveBeenCalled();
+    fireEvent.click(button);expect(await screen.findByText(/Letter not printed: Allow popups/)).toBeTruthy();
+    const win=printWindow();window.open.mockReturnValue(win);fireEvent.click(button);
+    await waitFor(()=>expect(win.print).toHaveBeenCalledOnce());expect(referralInsert).toHaveBeenCalledOnce();
+    expect(win.opener).toBeNull();expect(win.document.write.mock.calls.at(-1)[0]).toContain('Not assessed — allergy status unknown');
+  });
+  it('blocks printing after a failed fresh clinical read and supports print-only retry',async()=>{
+    const button=await saveReferral(),win=printWindow();vi.spyOn(window,'open').mockReturnValue(win);
+    historyFailure=true;fireEvent.click(button);
+    expect(await screen.findByText(/Letter not printed/)).toBeTruthy();expect(win.print).not.toHaveBeenCalled();expect(win.close).toHaveBeenCalledOnce();
+    historyFailure=false;const retryWin=printWindow();window.open.mockReturnValue(retryWin);fireEvent.click(button);
+    await waitFor(()=>expect(retryWin.print).toHaveBeenCalledOnce());expect(referralInsert).toHaveBeenCalledOnce();
+  });
+  it('locks patient switching during print preparation and closes on unmount',async()=>{
+    const button=await saveReferral(),win=printWindow();vi.spyOn(window,'open').mockReturnValue(win);historyDeferred=defer();
+    fireEvent.click(button);fireEvent.click(screen.getByText('Synthetic Bob'));expect(screen.getAllByText('Synthetic Alice')).toHaveLength(2);
+    cleanup();await act(async()=>historyDeferred.resolve({data:[],count:0}));expect(win.print).not.toHaveBeenCalled();expect(win.close).toHaveBeenCalledOnce();
   });
 });

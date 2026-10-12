@@ -276,3 +276,14 @@ button, input, select, textarea { font: inherit; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Clinical record and print review */
+.wl-record-overlay { position:fixed; inset:0; background:#1e2a3080; display:flex; align-items:center; justify-content:center; z-index:100; padding:16px; }
+.wl-record-dialog { background:#f5f7f8; border-radius:16px; width:100%; max-width:780px; max-height:90vh; overflow:auto; padding:24px; }
+.wl-record-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.wl-record-heading h2 { font-size:18px; margin:0; } .wl-record-heading h3 { font-size:15px; margin:0; }
+.wl-record-actions { display:flex; gap:8px; flex-wrap:wrap; } .wl-record-actions .wl-btn { display:flex; align-items:center; gap:6px; }
+.wl-record-section { padding:16px; margin-top:14px; background:white; border:1px solid #dce3e6; border-radius:12px; }
+.wl-record-dialog p, .wl-record-dialog li { font-size:13px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.wl-record-meta { color:#526269; font-size:12px!important; } .wl-record-entry { padding:6px 0; border-bottom:1px solid #eef1f2; }
+@media (max-width:600px) { .wl-record-dialog { padding:14px; } .wl-record-section { padding:12px; } }

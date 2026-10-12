@@ -329,7 +329,7 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
           )}
         </div>
       </div>
-      {selectedPatient && <PatientRecord patient={selectedPatient} onClose={() => setSelectedPatient(null)} />}
+      {selectedPatient && <PatientRecord patient={selectedPatient} staff={staff} onClose={() => setSelectedPatient(null)} />}
     </div>
   );
 }

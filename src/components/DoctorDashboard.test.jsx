@@ -10,11 +10,11 @@ const patients = [
   { id: "patient-a", name: "Synthetic Alice", code: "PT-A", dob: "2000-01-01", gender: "Other", phone: "test" },
   { id: "patient-b", name: "Synthetic Bob", code: "PT-B", dob: "2001-01-01", gender: "Other", phone: "test" },
 ];
-let historyFailure, historyDeferred, allergyFailure, testPatients, savedReferrals, referralSave, referralInsert;
+let historyFailure, historyDeferred, allergyFailure, testPatients, savedReferrals, referralSave, referralInsert, queueItems;
 const defer = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 beforeEach(() => {
   historyFailure = false; historyDeferred = null; allergyFailure = false; testPatients = patients;
-  savedReferrals = []; referralSave = null; referralInsert = vi.fn();
+  savedReferrals = []; queueItems = []; referralSave = null; referralInsert = vi.fn();
   supabase.rpc.mockReset();
   supabase.from.mockImplementation(table => {
     let patientId, single = false, inserting = false;
@@ -32,7 +32,7 @@ beforeEach(() => {
         }
         const result = (table === "consultations" && historyFailure) || (table === "patient_allergy_reviews" && allergyFailure)
           ? { data: null, error: { message: "Synthetic failure" } }
-          : { data: table === "patients" ? testPatients : table === "referrals" ? (single ? savedReferrals[0] : savedReferrals) : single ? null : [], error: null, count: 0 };
+          : { data: table === "patients" ? testPatients : table === "visits" ? queueItems : table === "referrals" ? (single ? savedReferrals[0] : savedReferrals) : single ? null : [], error: null, count: 0 };
         return Promise.resolve(result).then(resolve, reject);
       },
     };
@@ -132,19 +132,20 @@ describe("doctor consultation submission", () => {
   });
 });
 
-const savedReferral = { id: "ref-1", patient_id: "patient-a", direction: "Outgoing", code: "REF-TEST", created_by: "doctor", facility_name: "Synthetic Facility", reason: "Synthetic reason", created_at: "2026-10-11T10:00:00Z" };
+const savedReferral = { id: "00000000-0000-4000-8000-000000000010", visit_id:null, referring_doctor:"",notes:"",urgency:"Routine", patient_id: "patient-a", direction: "Outgoing", code: "REF-TEST", created_by: "doctor", facility_name: "Synthetic Facility", reason: "Synthetic reason", created_at: "2026-10-11T10:00:00Z" };
 const printWindow = () => ({ opener:{},closed:false,document:{open:vi.fn(),write:vi.fn(),close:vi.fn()},focus:vi.fn(),print:vi.fn(),close:vi.fn() });
 async function saveReferral() {
-  referralSave = defer(); await selectAlice();
+  referralSave = defer(); supabase.rpc.mockReturnValue(referralSave.promise); await selectAlice();
   fireEvent.click(screen.getByRole('button',{name:'Refer to another facility'}));
   fireEvent.change(screen.getByPlaceholderText('Facility name'),{target:{value:'Synthetic Facility'}});
   fireEvent.change(screen.getByPlaceholderText('Reason for referral'),{target:{value:'Synthetic reason'}});
   const form = screen.getByRole('button',{name:'Save referral'}).closest('form');
   fireEvent.submit(form); fireEvent.submit(form);
-  expect(referralInsert).toHaveBeenCalledOnce();
+  expect(referralInsert).not.toHaveBeenCalled(); expect(supabase.rpc).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByText('Synthetic Bob'));expect(screen.getAllByText('Synthetic Alice')).toHaveLength(2);
-  savedReferrals = [savedReferral];
-  await act(async()=>referralSave.resolve({data:savedReferral,error:null}));
+  const result={...savedReferral,request_id:supabase.rpc.mock.calls[0][1].p_request_id};
+  savedReferrals = [result];
+  await act(async()=>referralSave.resolve({data:result,error:null}));
   return screen.findByRole('button',{name:'Print saved referral'});
 }
 describe('saved referral printing',()=>{
@@ -153,7 +154,7 @@ describe('saved referral printing',()=>{
     const button = await saveReferral();expect(window.open).not.toHaveBeenCalled();
     fireEvent.click(button);expect(await screen.findByText(/Letter not printed: Allow popups/)).toBeTruthy();
     const win=printWindow();window.open.mockReturnValue(win);fireEvent.click(button);
-    await waitFor(()=>expect(win.print).toHaveBeenCalledOnce());expect(referralInsert).toHaveBeenCalledOnce();
+    await waitFor(()=>expect(win.print).toHaveBeenCalledOnce());expect(referralInsert).not.toHaveBeenCalled();expect(supabase.rpc).toHaveBeenCalledOnce();
     expect(win.opener).toBeNull();expect(win.document.write.mock.calls.at(-1)[0]).toContain('Not assessed — allergy status unknown');
   });
   it('blocks printing after a failed fresh clinical read and supports print-only retry',async()=>{
@@ -161,11 +162,37 @@ describe('saved referral printing',()=>{
     historyFailure=true;fireEvent.click(button);
     expect(await screen.findByText(/Letter not printed/)).toBeTruthy();expect(win.print).not.toHaveBeenCalled();expect(win.close).toHaveBeenCalledOnce();
     historyFailure=false;const retryWin=printWindow();window.open.mockReturnValue(retryWin);fireEvent.click(button);
-    await waitFor(()=>expect(retryWin.print).toHaveBeenCalledOnce());expect(referralInsert).toHaveBeenCalledOnce();
+    await waitFor(()=>expect(retryWin.print).toHaveBeenCalledOnce());expect(referralInsert).not.toHaveBeenCalled();expect(supabase.rpc).toHaveBeenCalledOnce();
   });
   it('locks patient switching during print preparation and closes on unmount',async()=>{
     const button=await saveReferral(),win=printWindow();vi.spyOn(window,'open').mockReturnValue(win);historyDeferred=defer();
     fireEvent.click(button);fireEvent.click(screen.getByText('Synthetic Bob'));expect(screen.getAllByText('Synthetic Alice')).toHaveLength(2);
     cleanup();await act(async()=>historyDeferred.resolve({data:[],count:0}));expect(win.print).not.toHaveBeenCalled();expect(win.close).toHaveBeenCalledOnce();
+  });
+});
+
+describe('atomic referral retry UI',()=>{
+  async function openReferral(){ await selectAlice();fireEvent.click(screen.getByRole('button',{name:'Refer to another facility'}));fireEvent.change(screen.getByLabelText('Receiving facility'),{target:{value:'Synthetic Facility'}});fireEvent.change(screen.getByLabelText('Referral reason'),{target:{value:'Synthetic reason'}}); }
+  it('freezes an unknown outcome, locks other writes and retries the original request',async()=>{
+    supabase.rpc.mockRejectedValueOnce(new Error('Lost response')).mockImplementationOnce(async(name,p)=>({data:{...savedReferral,request_id:p.p_request_id},error:null}));
+    await openReferral();fireEvent.click(screen.getByRole('button',{name:'Save referral'}));
+    const retry=await screen.findByRole('button',{name:'Retry referral save'});
+    expect(screen.getByLabelText('Receiving facility').closest('fieldset').disabled).toBe(true);
+    fireEvent.click(screen.getByText('Synthetic Bob'));expect(screen.getAllByText('Synthetic Alice')).toHaveLength(2);
+    expect(screen.getByRole('button',{name:'Save consultation'}).disabled).toBe(true);
+    historyFailure=true;fireEvent.click(retry);await screen.findByRole('button',{name:'Print saved referral'});
+    expect(supabase.rpc.mock.calls[0][1]).toEqual(supabase.rpc.mock.calls[1][1]);expect(referralInsert).not.toHaveBeenCalled();
+  });
+  it('retains an editable draft after a definite rejection',async()=>{
+    supabase.rpc.mockResolvedValue({data:null,error:{code:'22023',message:'Visit completed'}});await openReferral();fireEvent.click(screen.getByRole('button',{name:'Save referral'}));
+    expect(await screen.findByText('Visit completed')).toBeTruthy();expect(screen.getByLabelText('Receiving facility').value).toBe('Synthetic Facility');expect(screen.getByLabelText('Receiving facility').closest('fieldset').disabled).toBe(false);expect(screen.queryByRole('button',{name:'Retry referral save'})).toBeNull();
+  });
+  it('sends only the explicitly selected queue visit, with no browser actor or timestamps',async()=>{
+    queueItems=[{id:'visit-a',patient_id:'patient-a',status:'In Consultation',patients:{id:'patient-a',name:'Synthetic Alice',code:'PT-A'}}];
+    supabase.rpc.mockImplementation(async(name,p)=>({data:{...savedReferral,visit_id:'visit-a',request_id:p.p_request_id},error:null}));
+    render(<DoctorDashboard staff={{id:'doctor',role:'Doctor'}} onLogout={()=>{}}/>);
+    fireEvent.click((await screen.findByText('In Consultation')).closest('.wl-row'));await waitFor(()=>expect(screen.getByRole('button',{name:'Save consultation'}).disabled).toBe(false));
+    fireEvent.click(screen.getByRole('button',{name:'Refer to another facility'}));fireEvent.change(screen.getByLabelText('Receiving facility'),{target:{value:'Synthetic Facility'}});fireEvent.change(screen.getByLabelText('Referral reason'),{target:{value:'Synthetic reason'}});fireEvent.click(screen.getByRole('button',{name:'Save referral'}));
+    await screen.findByRole('button',{name:'Print saved referral'});expect(supabase.rpc.mock.calls[0][0]).toBe('save_outgoing_referral');expect(supabase.rpc.mock.calls[0][1]).toEqual({p_patient_id:'patient-a',p_visit_id:'visit-a',p_request_id:expect.any(String),p_facility_name:'Synthetic Facility',p_referring_doctor:'',p_reason:'Synthetic reason',p_urgency:'Routine',p_notes:''});
   });
 });

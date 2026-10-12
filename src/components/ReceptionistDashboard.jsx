@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, Search, User, AlertCircle, UserPlus, Clock, Send } from "lucide-react";
 import { supabase } from "../supabaseClient";
 import Header from "./Header";
 import PatientRecord from "./PatientRecord";
+import { createIncomingReferralSubmission, incomingReferralPayload } from "../clinical/referralSubmission";
+const emptyReferral = () => ({facility_name:"",referring_doctor:"",reason:"",urgency:"Routine",notes:""});
 
 export default function ReceptionistDashboard({ staff, onLogout }) {
   const [patients, setPatients] = useState([]);
@@ -14,8 +16,14 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
   const [justAdded, setJustAdded] = useState(null);
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [duplicateWarning, setDuplicateWarning] = useState(null);
-  const [referralFormPatientId, setReferralFormPatientId] = useState(null);
-  const [incomingReferralForm, setIncomingReferralForm] = useState({ facility_name: "", referring_doctor: "", reason: "" });
+  const [referralPatient, setReferralPatient] = useState(null);
+  const [incomingSaving, setIncomingSaving] = useState(false);
+  const [incomingUnconfirmed, setIncomingUnconfirmed] = useState(false);
+  const incomingLock = useRef(false);
+  const incomingSubmission = useRef(null);
+  const mounted = useRef(false);
+  if (!incomingSubmission.current) incomingSubmission.current = createIncomingReferralSubmission(supabase);
+  const [incomingReferralForm, setIncomingReferralForm] = useState(emptyReferral);
   const [incomingReferralError, setIncomingReferralError] = useState("");
   const [referralSavedId, setReferralSavedId] = useState(null);
 
@@ -31,7 +39,8 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
   }
 
   useEffect(() => {
-    loadPatients();
+    mounted.current = true; loadPatients();
+    return () => { mounted.current = false; };
   }, []);
 
   async function checkIn(patientId) {
@@ -39,42 +48,35 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
     loadPatients();
   }
 
-  function openIncomingReferralForm(patientId) {
-    setReferralFormPatientId(patientId);
-    setIncomingReferralForm({ facility_name: "", referring_doctor: "", reason: "" });
-    setIncomingReferralError("");
+  function openIncomingReferralForm(patient) {
+    if (incomingLock.current || incomingSubmission.current.hasPending()) return;
+    setReferralPatient(patient); setIncomingReferralForm(emptyReferral());
+    setIncomingReferralError(""); setIncomingUnconfirmed(false); setReferralSavedId(null);
   }
 
   function cancelIncomingReferralForm() {
-    setReferralFormPatientId(null);
-    setIncomingReferralError("");
+    if (incomingLock.current || incomingSubmission.current.hasPending()) return;
+    setReferralPatient(null); setIncomingReferralError("");
   }
 
-  async function submitIncomingReferral(patientId) {
-    if (!incomingReferralForm.facility_name.trim() || !incomingReferralForm.reason.trim()) {
-      setIncomingReferralError("Fill in the referring facility and reason.");
-      return;
+  async function submitIncomingReferral(e) {
+    e.preventDefault();
+    if (!referralPatient || incomingLock.current) return;
+    let payload;
+    try { payload = incomingReferralPayload(referralPatient.id, incomingReferralForm); }
+    catch (error) { setIncomingReferralError(error.message); return; }
+    incomingLock.current = true; setIncomingSaving(true); setIncomingReferralError("");
+    try {
+      const data = await incomingSubmission.current.save(payload, staff.id);
+      if (!mounted.current) return;
+      setReferralPatient(null); setIncomingReferralForm(emptyReferral()); setIncomingUnconfirmed(false);
+      setReferralSavedId(`${data.code} — ${referralPatient.name} (${referralPatient.code})`);
+    } catch (error) {
+      if (mounted.current) { setIncomingReferralError(error.message); setIncomingUnconfirmed(incomingSubmission.current.hasPending()); }
+    } finally {
+      incomingLock.current = false;
+      if (mounted.current) setIncomingSaving(false);
     }
-    const { data, error } = await supabase
-      .from("referrals")
-      .insert({
-        patient_id: patientId,
-        direction: "Incoming",
-        facility_name: incomingReferralForm.facility_name.trim(),
-        referring_doctor: incomingReferralForm.referring_doctor.trim(),
-        reason: incomingReferralForm.reason.trim(),
-        created_by: staff.id,
-      })
-      .select()
-      .single();
-    if (error) {
-      setIncomingReferralError(error.message);
-      return;
-    }
-    setReferralFormPatientId(null);
-    setIncomingReferralError("");
-    setReferralSavedId(data.code);
-    setTimeout(() => setReferralSavedId(null), 3000);
   }
 
   function validateForm() {
@@ -238,10 +240,30 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
         </div>
 
         {referralSavedId && (
-          <div className="wl-fade-in" style={{ fontSize: 13, color: "#2F7D4F", fontFamily: "IBM Plex Mono, monospace", marginBottom: 12 }}>
+          <div role="status" className="wl-fade-in" style={{ fontSize: 13, color: "#2F7D4F", fontFamily: "IBM Plex Mono, monospace", marginBottom: 12 }}>
             Incoming referral logged as {referralSavedId}
           </div>
         )}
+
+        {referralPatient && <section className="wl-record-section" aria-label="Incoming referral editor" style={{marginBottom:16}}>
+          <h3>Incoming referral — {referralPatient.name} ({referralPatient.code})</h3>
+          <p>Record the referring facility’s information. This does not check the patient in or complete a queue visit.</p>
+          <form onSubmit={submitIncomingReferral}>
+            <fieldset disabled={incomingSaving || incomingUnconfirmed} style={{border:0,padding:0,margin:0,minWidth:0}}>
+              <div className="wl-form-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <label>Referring facility<input className="wl-input" maxLength={500} value={incomingReferralForm.facility_name} onChange={e=>setIncomingReferralForm({...incomingReferralForm,facility_name:e.target.value})}/></label>
+                <label>Referring doctor (reported)<input className="wl-input" maxLength={500} value={incomingReferralForm.referring_doctor} onChange={e=>setIncomingReferralForm({...incomingReferralForm,referring_doctor:e.target.value})}/></label>
+              </div>
+              <label>Reason given for referral<textarea className="wl-input" rows={3} maxLength={10000} value={incomingReferralForm.reason} onChange={e=>setIncomingReferralForm({...incomingReferralForm,reason:e.target.value})}/></label>
+              <label>Reported urgency<select className="wl-input" value={incomingReferralForm.urgency} onChange={e=>setIncomingReferralForm({...incomingReferralForm,urgency:e.target.value})}><option>Routine</option><option>Urgent</option><option>Emergency</option></select></label>
+              <label>Additional notes<textarea className="wl-input" rows={2} maxLength={50000} value={incomingReferralForm.notes} onChange={e=>setIncomingReferralForm({...incomingReferralForm,notes:e.target.value})}/></label>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:12}}><button className="wl-btn" type="submit" disabled={incomingSaving || incomingUnconfirmed}>{incomingSaving ? "Saving incoming referral…" : "Save incoming referral"}</button><button className="wl-btn" type="button" onClick={cancelIncomingReferralForm}>Cancel incoming referral</button></div>
+            </fieldset>
+            {incomingUnconfirmed && <p role="status">Save unconfirmed. Retry this exact referral before changing its patient or details.</p>}
+            {incomingReferralError && <p role="alert" className="wl-alert">{incomingReferralError}</p>}
+            {incomingUnconfirmed && <button className="wl-btn" type="button" disabled={incomingSaving} onClick={submitIncomingReferral}>Retry incoming referral save</button>}
+          </form>
+        </section>}
 
         <p style={{ fontSize: 12, color: "#7C8A90", margin: "-4px 0 8px" }}>Click any patient to see their full record — consultations, vitals, labs, admissions, and invoices in one place.</p>
         <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, overflow: "hidden" }}>
@@ -284,8 +306,10 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
                       </div>
                       <button
                         className="wl-btn"
-                        onClick={(e) => { e.stopPropagation(); openIncomingReferralForm(p.id); }}
+                        onClick={(e) => { e.stopPropagation(); openIncomingReferralForm(p); }}
                         style={{ background: "#7C5CBF1A", color: "#7C5CBF", fontSize: 12, padding: "8px 10px", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
+                        disabled={incomingSaving || incomingUnconfirmed}
+                        aria-label={`Log incoming referral for ${p.name}`}
                         title="Log an incoming referral for this patient"
                       >
                         <Send size={13} /> Referral
@@ -302,27 +326,6 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
                     </div>
                   </div>
 
-                  {referralFormPatientId === p.id && (
-                    <div className="wl-fade-in" style={{ padding: "0 20px 16px" }} onClick={(e) => e.stopPropagation()}>
-                      <div style={{ background: "#F5F7F8", borderRadius: 8, padding: 12 }}>
-                        <p style={{ fontSize: 11, color: "#7C8A90", margin: "0 0 8px" }}>Logging an incoming referral for <strong>{p.name}</strong> — where did they come from, and why?</p>
-                        <div className="wl-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-                          <input className="wl-input" value={incomingReferralForm.facility_name} onChange={(e) => setIncomingReferralForm({ ...incomingReferralForm, facility_name: e.target.value })} placeholder="Referring facility" />
-                          <input className="wl-input" value={incomingReferralForm.referring_doctor} onChange={(e) => setIncomingReferralForm({ ...incomingReferralForm, referring_doctor: e.target.value })} placeholder="Referring doctor (optional)" />
-                        </div>
-                        <input className="wl-input" value={incomingReferralForm.reason} onChange={(e) => setIncomingReferralForm({ ...incomingReferralForm, reason: e.target.value })} placeholder="Reason given for referral" style={{ marginBottom: 8 }} />
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <button className="wl-btn" onClick={() => submitIncomingReferral(p.id)} style={{ background: "#7C5CBF", color: "#fff", fontSize: 12 }}>Save referral</button>
-                          <button className="wl-btn" onClick={cancelIncomingReferralForm} style={{ background: "#fff", color: "#5B6B72", fontSize: 12 }}>Cancel</button>
-                          {incomingReferralError && (
-                            <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#A13D3D", fontSize: 12 }}>
-                              <AlertCircle size={13} /> {incomingReferralError}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
               );
             })

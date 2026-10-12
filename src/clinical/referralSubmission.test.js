@@ -11,3 +11,13 @@ describe('referral submission',()=>{
   it('retains draft correction capability after a database rejection',async()=>{const submit=createReferralSubmission({rpc:async()=>({error:{code:'22023',message:'Invalid visit'}})},()=>request);await expect(submit.save(payload,actor)).rejects.toThrow();expect(submit.hasPending()).toBe(false);});
   it.each(['patient_id','visit_id','created_by','request_id','id','created_at','direction','facility_name','referring_doctor','reason','urgency','notes'])('retains pending on mismatched confirmation %s',async key=>{const submit=createReferralSubmission({rpc:async()=>({data:{...response(),[key]:'wrong'}})},()=>request);await expect(submit.save(payload,actor)).rejects.toThrow(/not be confirmed/);expect(submit.hasPending()).toBe(true);});
 });
+
+describe('incoming referral submission',()=>{
+  it('uses the incoming RPC and rejects a returned visit or outgoing direction',async()=>{
+    const {createIncomingReferralSubmission,incomingReferralPayload}=await import('./referralSubmission');
+    const p=incomingReferralPayload(patient,form);expect(p).not.toHaveProperty('p_visit_id');
+    const client={rpc:vi.fn(async()=>({data:{...response(),direction:'Incoming'},error:null}))},submit=createIncomingReferralSubmission(client,()=>request);
+    expect((await submit.save(p,actor)).direction).toBe('Incoming');expect(client.rpc).toHaveBeenCalledWith('save_incoming_referral',{...p,p_request_id:request});
+    for(const patch of [{direction:'Outgoing'},{visit_id:patient}]){const bad=createIncomingReferralSubmission({rpc:async()=>({data:{...response(),direction:'Incoming',...patch},error:null})},()=>request);await expect(bad.save(p,actor)).rejects.toThrow(/not be confirmed/);expect(bad.hasPending()).toBe(true);}
+  });
+});

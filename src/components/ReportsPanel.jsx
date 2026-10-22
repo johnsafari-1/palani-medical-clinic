@@ -1,129 +1,27 @@
-import { useEffect, useState } from "react";
-import { Users, UserPlus, Wallet, AlertCircle, BedDouble, Stethoscope, Printer } from "lucide-react";
-import { supabase } from "../supabaseClient";
-
-function daysAgoISO(days) {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString();
-}
-
-export default function ReportsPanel() {
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState(null);
-
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const weekAgo = daysAgoISO(7);
-
-      const [
-        { count: totalPatients },
-        { count: newPatients },
-        { data: invoices },
-        { count: admittedNow },
-        { count: consultsThisWeek },
-      ] = await Promise.all([
-        supabase.from("patients").select("*", { count: "exact", head: true }),
-        supabase.from("patients").select("*", { count: "exact", head: true }).gte("registered_at", weekAgo),
-        supabase.from("invoices").select("total, status, created_at"),
-        supabase.from("admissions").select("*", { count: "exact", head: true }).eq("status", "Admitted"),
-        supabase.from("consultations").select("*", { count: "exact", head: true }).gte("created_at", weekAgo),
-      ]);
-
-      const paidInvoices = (invoices || []).filter((i) => i.status === "Paid");
-      const unpaidInvoices = (invoices || []).filter((i) => i.status === "Unpaid");
-      const totalRevenue = paidInvoices.reduce((sum, i) => sum + Number(i.total), 0);
-      const revenueThisWeek = paidInvoices.filter((i) => i.created_at >= weekAgo).reduce((sum, i) => sum + Number(i.total), 0);
-      const outstanding = unpaidInvoices.reduce((sum, i) => sum + Number(i.total), 0);
-
-      setStats({
-        totalPatients: totalPatients || 0,
-        newPatients: newPatients || 0,
-        totalRevenue,
-        revenueThisWeek,
-        outstanding,
-        outstandingCount: unpaidInvoices.length,
-        admittedNow: admittedNow || 0,
-        consultsThisWeek: consultsThisWeek || 0,
-      });
-      setLoading(false);
-    })();
-  }, []);
-
-  function printReport() {
-    if (!stats) return;
-    const today = new Date().toISOString().slice(0, 10);
-    const html = `
-      <!doctype html><html><head><meta charset="utf-8" /><title>Palani Medical Clinic — Report ${today}</title>
-      <style>
-        body { font-family: Arial, sans-serif; color: #1E2A30; padding: 40px; max-width: 640px; margin: 0 auto; }
-        h1 { font-size: 20px; margin: 0 0 4px; }
-        .sub { color: #5B6B72; font-size: 13px; margin-bottom: 24px; }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { text-align: left; border-bottom: 2px solid #1E2A30; padding: 8px 4px; font-size: 12px; }
-        td { border-bottom: 1px solid #DCE3E6; padding: 10px 4px; }
-        .footer { margin-top: 32px; font-size: 11px; color: #7C8A90; text-align: center; }
-      </style></head>
-      <body>
-        <h1>Palani Medical Clinic</h1>
-        <div class="sub">Operations report · Generated ${today}</div>
-        <table>
-          <thead><tr><th>Metric</th><th style="text-align:right">Value</th></tr></thead>
-          <tbody>
-            <tr><td>Total patients</td><td style="text-align:right">${stats.totalPatients} (${stats.newPatients} new this week)</td></tr>
-            <tr><td>Consultations this week</td><td style="text-align:right">${stats.consultsThisWeek}</td></tr>
-            <tr><td>Currently admitted</td><td style="text-align:right">${stats.admittedNow}</td></tr>
-            <tr><td>Total revenue (paid)</td><td style="text-align:right">KES ${stats.totalRevenue.toLocaleString()}</td></tr>
-            <tr><td>Revenue this week</td><td style="text-align:right">KES ${stats.revenueThisWeek.toLocaleString()}</td></tr>
-            <tr><td>Outstanding (unpaid)</td><td style="text-align:right">KES ${stats.outstanding.toLocaleString()} (${stats.outstandingCount} invoice${stats.outstandingCount === 1 ? "" : "s"})</td></tr>
-          </tbody>
-        </table>
-        <div class="footer">Palani Medical Clinic — internal operations report.</div>
-      </body></html>`;
-    const win = window.open("", "_blank");
-    win.document.write(html);
-    win.document.close();
-    win.focus();
-    win.print();
+import {useEffect,useRef,useState} from 'react';
+import {Printer,RefreshCw} from 'lucide-react';
+import {supabase} from '../supabaseClient';
+import {parseOperationsReport,operationsReportRows} from '../reporting/operationsReport';
+import {buildOperationsReport,displayTime,openClinicalPrintWindow,printClinicalDocument} from '../printing/clinicalDocuments';
+export default function ReportsPanel(){
+  const [stats,setStats]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[printError,setPrintError]=useState('');
+  const mounted=useRef(false),generation=useRef(0);
+  async function load(){
+    const request=++generation.current;setLoading(true);setError('');setPrintError('');
+    try{const {data,error:readError}=await supabase.rpc('clinic_operations_report');if(readError)throw new Error('Operations report unavailable. Retry the report.');const verified=parseOperationsReport(data);if(mounted.current&&request===generation.current)setStats(verified);}
+    catch(e){if(mounted.current&&request===generation.current)setError(e.message);}
+    finally{if(mounted.current&&request===generation.current)setLoading(false);}
   }
-
-  if (loading) {
-    return <div style={{ padding: 24, textAlign: "center", color: "#7C8A90", fontSize: 13 }}>Loading reports…</div>;
+  useEffect(()=>{mounted.current=true;void load();return()=>{mounted.current=false;generation.current++;};},[]);
+  function printReport(){
+    if(!stats||loading||error)return;
+    let win;setPrintError('');try{win=openClinicalPrintWindow();printClinicalDocument(win,buildOperationsReport(stats,operationsReportRows(stats)));}catch(e){win?.close();setPrintError(e.message);}
   }
-
-  const cards = [
-    { label: "Total patients", value: stats.totalPatients, sub: `${stats.newPatients} new this week`, icon: Users, color: "#7C5CBF" },
-    { label: "Consultations this week", value: stats.consultsThisWeek, sub: "across all doctors", icon: Stethoscope, color: "#2F7D4F" },
-    { label: "Currently admitted", value: stats.admittedNow, sub: "patients on the ward", icon: BedDouble, color: "#A13D3D" },
-    { label: "Revenue (paid)", value: `KES ${stats.totalRevenue.toLocaleString()}`, sub: `KES ${stats.revenueThisWeek.toLocaleString()} this week`, icon: Wallet, color: "#2B6777" },
-    { label: "Outstanding", value: `KES ${stats.outstanding.toLocaleString()}`, sub: `${stats.outstandingCount} unpaid invoice${stats.outstandingCount === 1 ? "" : "s"}`, icon: AlertCircle, color: "#C77D2E" },
-  ];
-
-  return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
-        <button className="wl-btn" onClick={printReport} style={{ background: "#F5F7F8", color: "#5B6B72", display: "flex", alignItems: "center", gap: 6 }}>
-          <Printer size={14} /> Print report
-        </button>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
-        {cards.map((c) => {
-          const Icon = c.icon;
-          return (
-            <div key={c.label} className="wl-card" style={{ padding: 18 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                <div style={{ width: 30, height: 30, borderRadius: 8, background: c.color + "1A", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Icon size={15} color={c.color} />
-                </div>
-                <span style={{ fontSize: 12, color: "#5B6B72", fontWeight: 600 }}>{c.label}</span>
-              </div>
-              <div style={{ fontSize: 22, fontWeight: 600, fontFamily: "Space Grotesk, sans-serif" }}>{c.value}</div>
-              <div style={{ fontSize: 11, color: "#7C8A90", marginTop: 2 }}>{c.sub}</div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+  return <section aria-label="Operations reports" aria-busy={loading}>
+    <div className="wl-record-heading" style={{marginBottom:14}}><div><h2>Operations report</h2><p>Test-data workspace · rolling seven-day period</p></div><div className="wl-record-actions"><button className="wl-btn" disabled={loading} onClick={load}><RefreshCw size={14}/>{error?'Retry report':'Refresh report'}</button><button className="wl-btn" disabled={!stats||loading||!!error} onClick={printReport}><Printer size={14}/>Print report</button></div></div>
+    {loading&&<p role="status">Loading report…</p>}
+    {error&&<p className="wl-alert" role="alert">{error} {stats?'Previous snapshot shown below; printing is disabled.':'No verified totals are available.'}</p>}
+    {printError&&<p className="wl-alert" role="alert">{printError}</p>}
+    {stats&&<><p className="wl-record-meta">Read: {displayTime(stats.read_at)} · Period begins: {displayTime(stats.period_start)}</p>{stats.paidWithoutTimestamp>0&&<p className="wl-alert">{stats.paidWithoutTimestamp} paid invoice(s) have no payment timestamp and are excluded from the seven-day revenue figure.</p>}<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(210px,1fr))',gap:14}}>{operationsReportRows(stats).map(([label,value])=><article className="wl-card" key={label} style={{padding:18}}><h3 style={{fontSize:13}}>{label}</h3><p style={{fontSize:21,fontWeight:600,overflowWrap:'anywhere'}}>{value}</p></article>)}</div></>}
+  </section>;
 }

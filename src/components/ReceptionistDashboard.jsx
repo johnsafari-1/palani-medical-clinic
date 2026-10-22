@@ -3,6 +3,7 @@ import { Plus, Search, User, AlertCircle, UserPlus, Clock, Send } from "lucide-r
 import { supabase } from "../supabaseClient";
 import Header from "./Header";
 import PatientRecord from "./PatientRecord";
+import { createCareSubmission } from "../clinical/careSubmission";
 import { createIncomingReferralSubmission, incomingReferralPayload } from "../clinical/referralSubmission";
 const emptyReferral = () => ({facility_name:"",referring_doctor:"",reason:"",urgency:"Routine",notes:""});
 
@@ -26,16 +27,22 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
   const [incomingReferralForm, setIncomingReferralForm] = useState(emptyReferral);
   const [incomingReferralError, setIncomingReferralError] = useState("");
   const [referralSavedId, setReferralSavedId] = useState(null);
+  const checkin=useRef(null);if(!checkin.current)checkin.current=createCareSubmission(supabase);
+  const checkinLock=useRef(false),checkinDraft=useRef(null),listRequest=useRef(0);
+  const [checkinBusy,setCheckinBusy]=useState(false),[checkinPending,setCheckinPending]=useState(false),[checkinError,setCheckinError]=useState(""),[checkinMessage,setCheckinMessage]=useState("");
+  const [listError,setListError]=useState("");
 
   async function loadPatients() {
-    setLoading(true);
-    const [{ data, error }, { data: visitData }] = await Promise.all([
-      supabase.from("patients").select("*").order("registered_at", { ascending: false }),
-      supabase.from("visits").select("*").in("status", ["Waiting", "In Consultation"]),
-    ]);
-    if (!error) setPatients(data);
-    setVisits(visitData || []);
-    setLoading(false);
+    const request=++listRequest.current;setLoading(true);setListError("");
+    try{
+      const [patientsResult,visitsResult]=await Promise.all([
+        supabase.from("patients").select("*").order("registered_at",{ascending:false}),
+        supabase.from("visits").select("*").in("status",["Waiting","In Consultation"]),
+      ]);
+      if(patientsResult.error||visitsResult.error||!Array.isArray(patientsResult.data)||!Array.isArray(visitsResult.data))throw new Error("Patient or queue list unavailable. Retry before registering or checking in a patient.");
+      if(mounted.current&&request===listRequest.current){setPatients(patientsResult.data);setVisits(visitsResult.data);}
+    }catch(error){if(mounted.current&&request===listRequest.current)setListError(error.message);}
+    finally{if(mounted.current&&request===listRequest.current)setLoading(false);}
   }
 
   useEffect(() => {
@@ -43,9 +50,16 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
     return () => { mounted.current = false; };
   }, []);
 
-  async function checkIn(patientId) {
-    await supabase.from("visits").insert({ patient_id: patientId, checked_in_by: staff.id });
-    loadPatients();
+  async function checkIn(patient,retry=false) {
+    if(checkinLock.current||(!retry&&(checkin.current.hasPending()||loading||listError)))return;
+    if(!retry)checkinDraft.current={patient,payload:{p_patient_id:patient.id,p_reason:""}};
+    checkinLock.current=true;setCheckinBusy(true);setCheckinError("");setCheckinMessage("");
+    try{
+      const data=await checkin.current.save('checkin',checkinDraft.current.payload,staff.id);
+      if(!mounted.current)return;
+      setCheckinPending(false);setCheckinMessage(`Check-in confirmed for ${checkinDraft.current.patient.name}${data.status==='Completed'?' (visit already completed)':''}.`);checkinDraft.current=null;loadPatients();
+    }catch(error){if(mounted.current){setCheckinPending(checkin.current.hasPending());setCheckinError(error.message);}}
+    finally{checkinLock.current=false;if(mounted.current)setCheckinBusy(false);}
   }
 
   function openIncomingReferralForm(patient) {
@@ -135,6 +149,7 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
 
   async function addPatient(e) {
     e.preventDefault();
+    if(loading||listError){setFormError("Refresh the patient list before registration.");return;}
     const validationError = validateForm();
     if (validationError) {
       setFormError(validationError);
@@ -152,6 +167,7 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
   }
 
   async function confirmRegisterAnyway() {
+    if(loading||listError)return;
     await insertPatient();
   }
 
@@ -239,6 +255,10 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
           </div>
         </div>
 
+        {listError&&<p role="alert" className="wl-alert">{listError} <button className="wl-btn" onClick={loadPatients}>Retry patient list</button></p>}
+        {checkinMessage&&<p role="status">{checkinMessage}</p>}
+        {checkinError&&<p role="alert" className="wl-alert">{checkinError}</p>}
+        {checkinPending&&<button className="wl-btn" disabled={checkinBusy} onClick={()=>checkIn(null,true)}>Retry check-in</button>}
         {referralSavedId && (
           <div role="status" className="wl-fade-in" style={{ fontSize: 13, color: "#2F7D4F", fontFamily: "IBM Plex Mono, monospace", marginBottom: 12 }}>
             Incoming referral logged as {referralSavedId}
@@ -317,7 +337,9 @@ export default function ReceptionistDashboard({ staff, onLogout }) {
                       {!activeVisit && (
                         <button
                           className="wl-btn"
-                          onClick={(e) => { e.stopPropagation(); checkIn(p.id); }}
+                          disabled={checkinBusy||checkinPending||loading||!!listError}
+                          aria-label={`Check in ${p.name}`}
+                          onClick={(e) => { e.stopPropagation(); checkIn(p); }}
                           style={{ background: "#2B6777", color: "#fff", fontSize: 12, padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
                         >
                           <UserPlus size={13} /> Check in

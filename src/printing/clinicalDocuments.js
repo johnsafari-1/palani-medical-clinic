@@ -26,7 +26,7 @@ function consultationsHtml(rows) {
 function vitalsHtml(rows) {
   return rows.length ? rows.map(row => `<article><p>${escape(vitalDetails(row))}</p><p>Measured: ${time(row.measured_at)} · Recorded: ${time(row.recorded_at)} · Recorder ID: ${text(row.recorded_by)}</p></article>`).join("") : "<p>None recorded in accessible records.</p>";
 }
-const style = `body{font:13px Arial,sans-serif;color:#1e2a30;max-width:760px;margin:auto;padding:28px}h1{font-size:22px}h2{font-size:16px;border-bottom:1px solid #aab;padding-bottom:6px;margin-top:24px}p,li{white-space:pre-wrap;overflow-wrap:anywhere}article{border-bottom:1px solid #ddd;padding:4px 0}li{margin:8px 0}.notice{border:2px solid #aa6d13;padding:10px}.meta{color:#526269}section{break-inside:auto}h2{break-after:avoid}@media print{body{padding:0}}`;
+const style = `body{font:13px Arial,sans-serif;color:#1e2a30;max-width:760px;margin:auto;padding:28px}h1{font-size:22px}h2{font-size:16px;border-bottom:1px solid #aab;padding-bottom:6px;margin-top:24px}p,li{white-space:pre-wrap;overflow-wrap:anywhere}table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:left;border-bottom:1px solid #ddd;padding:9px 5px}td:last-child{text-align:right}thead{display:table-header-group}tr{break-inside:avoid}article{border-bottom:1px solid #ddd;padding:4px 0}li{margin:8px 0}.notice{border:2px solid #aa6d13;padding:10px}.meta{color:#526269}section{break-inside:auto}h2{break-after:avoid}@media print{body{padding:0}}`;
 function documentHtml(title, content, readAt) {
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><title>${escape(title)}</title><style>${style}</style></head><body><h1>Palani Medical Clinic</h1><p class="notice">TEST DATA — training document. Not for clinical use.</p><p class="meta">Generated: ${time(new Date().toISOString())}. Read snapshot: ${time(readAt)}. Accessible records only; this is not a certified FHIR document.</p>${content}</body></html>`;
 }
@@ -69,4 +69,9 @@ export function openClinicalPrintWindow() {
 export function printClinicalDocument(win, html) {
   if (win.closed) throw new Error("The print window was closed. Retry printing the saved record.");
   win.document.open(); win.document.write(html); win.document.close(); win.focus(); win.print();
+}
+
+export function buildOperationsReport(stats, rows) {
+  const body=`<h2>Operations report</h2><p>Rolling seven-day period begins: ${time(stats.period_start)}</p><table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>${rows.map(([label,value])=>`<tr><td>${escape(label)}</td><td>${escape(value)}</td></tr>`).join("")}</tbody></table><p>Paid revenue uses the recorded payment time. Paid invoices without a payment timestamp are excluded from the period total.</p>`;
+  return documentHtml("Palani Medical Clinic — Operations report",body,stats.read_at);
 }

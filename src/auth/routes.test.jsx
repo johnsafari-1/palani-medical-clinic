@@ -32,10 +32,10 @@ afterEach(cleanup);
 
 describe("role-protected app routes", () => {
   const pairs = Object.entries(ROLE_PATHS).flatMap(([userRole]) => Object.entries(ROLE_PATHS).map(([routeRole, path]) => [userRole, routeRole, path]));
-  it.each(pairs)("%s visiting the %s route receives only permitted content", (userRole, routeRole, path) => {
+  it.each(pairs)("%s visiting the %s route receives only permitted content", async (userRole, routeRole, path) => {
     render(tree(authState(userRole), path));
     if (userRole === routeRole) {
-      expect(screen.getByText(`${userRole} dashboard data`)).toBeTruthy();
+      expect(await screen.findByText(`${userRole} dashboard data`)).toBeTruthy();
     } else {
       expect(screen.getByText("Access denied")).toBeTruthy();
       expect(screen.queryByText(/dashboard data/)).toBeNull();

@@ -1,3 +1,5 @@
+> Current test-data release: see [completion status and acceptance checklist](TEST_RELEASE.md). This page retains earlier increment evidence.
+
 # Clinical integrity implementation — 11 October 2026
 
 This change builds on the merged Supabase Auth work. It is one implementation step toward healthcare readiness, not a DHA certification or FHIR conformance claim. Only test data is authorized for this prototype.

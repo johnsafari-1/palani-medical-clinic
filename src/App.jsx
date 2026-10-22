@@ -1,15 +1,16 @@
+import {lazy,Suspense} from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import ProtectedRoute, { AuthStatus } from "./auth/ProtectedRoute";
 import { destinationAfterLogin, homeForRole } from "./auth/roles";
 import LoginScreen from "./components/LoginScreen";
-import AdminDashboard from "./components/AdminDashboard";
-import ReceptionistDashboard from "./components/ReceptionistDashboard";
-import DoctorDashboard from "./components/DoctorDashboard";
-import NurseDashboard from "./components/NurseDashboard";
-import LabDashboard from "./components/LabDashboard";
-import PharmacyDashboard from "./components/PharmacyDashboard";
-import CashierDashboard from "./components/CashierDashboard";
+const AdminDashboard=lazy(()=>import("./components/AdminDashboard"));
+const ReceptionistDashboard=lazy(()=>import("./components/ReceptionistDashboard"));
+const DoctorDashboard=lazy(()=>import("./components/DoctorDashboard"));
+const NurseDashboard=lazy(()=>import("./components/NurseDashboard"));
+const LabDashboard=lazy(()=>import("./components/LabDashboard"));
+const PharmacyDashboard=lazy(()=>import("./components/PharmacyDashboard"));
+const CashierDashboard=lazy(()=>import("./components/CashierDashboard"));
 
 function LoginRoute() {
   const auth = useAuth();
@@ -26,7 +27,7 @@ function DashboardHome() {
 
 function Dashboard({ component: Component }) {
   const { staff, signOut } = useAuth();
-  return <div className="clinic-workspace"><Component key={staff.id} staff={staff} onLogout={signOut} /></div>;
+  return <div className="clinic-workspace"><Suspense fallback={<p className="wl-auth-status" role="status">Loading your workspace…</p>}><Component key={staff.id} staff={staff} onLogout={signOut} /></Suspense></div>;
 }
 
 export function AppRoutes() {

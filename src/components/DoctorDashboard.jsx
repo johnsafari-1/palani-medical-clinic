@@ -7,6 +7,7 @@ import PatientRecord from "./PatientRecord";
 import { readReferralContext } from "../clinical/recordReads";
 import { buildReferralLetter, openClinicalPrintWindow, printClinicalDocument } from "../printing/clinicalDocuments";
 import { createReferralSubmission, referralPayload } from "../clinical/referralSubmission";
+import { createCareSubmission } from "../clinical/careSubmission";
 import { createConsultationSubmission } from "../clinical/consultationSubmission";
 
 export default function DoctorDashboard({ staff, onLogout }) {
@@ -54,27 +55,38 @@ export default function DoctorDashboard({ staff, onLogout }) {
   const [allergyAvailable, setAllergyAvailable] = useState(false);
   const [allergyPending, setAllergyPending] = useState(false);
   const allergyLock = useRef(false);
+  const careSubmission=useRef(null); if(!careSubmission.current)careSubmission.current=createCareSubmission(supabase);
+  const careLock=useRef(false),careDraft=useRef(null);
+  const [careBusy,setCareBusy]=useState(false),[carePending,setCarePending]=useState(false),[careError,setCareError]=useState("");
+  const [queueError,setQueueError]=useState("");
+  const queueGeneration=useRef(0),directoryGeneration=useRef(0);
+  const [directoryError,setDirectoryError]=useState("");
+  const [wardIndexError,setWardIndexError]=useState("");
 
   useEffect(() => {
     mounted.current = true;
-    supabase.from("patients").select("*").order("name").then(({ data }) => setPatients(data || []));
+    loadDirectory();
     loadAdmittedIds();
     loadQueue();
-    return () => { mounted.current = false; historyRequest.current += 1; };
+    return () => { mounted.current = false; historyRequest.current += 1; queueGeneration.current++;directoryGeneration.current++; };
   }, []);
 
+  async function loadDirectory(){
+    const request=++directoryGeneration.current;
+    try{const {data,error}=await supabase.from("patients").select("*").order("name");if(error||!Array.isArray(data))throw new Error("Patient directory unavailable. Refresh before selecting a patient.");if(mounted.current&&request===directoryGeneration.current){setPatients(data);setDirectoryError("");}}catch(error){if(mounted.current&&request===directoryGeneration.current)setDirectoryError(error.message);}
+  }
   async function loadQueue() {
-    const { data } = await supabase
-      .from("visits")
-      .select("*, patients(id, name, code)")
-      .in("status", ["Waiting", "In Consultation"])
-      .order("checked_in_at", { ascending: true });
-    setQueue(data || []);
+    const request=++queueGeneration.current;
+    try {
+      const {data,error}=await supabase.from("visits").select("*, patients(id, name, code)").in("status",["Waiting","In Consultation"]).order("checked_in_at",{ascending:true});
+      if(error||!Array.isArray(data))throw new Error("Queue unavailable. Refresh before selecting a visit.");
+      if(mounted.current&&request===queueGeneration.current){setQueue(data);setQueueError("");}
+    } catch(error){if(mounted.current&&request===queueGeneration.current)setQueueError(error.message);}
   }
 
   async function loadAdmittedIds() {
-    const { data } = await supabase.from("admissions").select("patient_id").eq("status", "Admitted");
-    setAdmittedIds(new Set((data || []).map((a) => a.patient_id)));
+    try{const {data,error}=await supabase.from("admissions").select("patient_id").eq("status","Admitted");if(error||!Array.isArray(data))throw new Error("Ward markers unavailable; refresh or open the patient's verified ward history.");if(mounted.current){setAdmittedIds(new Set(data.map(row=>row.patient_id)));setWardIndexError("");}}
+    catch(error){if(mounted.current)setWardIndexError(error.message);}
   }
 
   const selected = patients.find((p) => p.id === selectedId) || null;
@@ -141,42 +153,33 @@ export default function DoctorDashboard({ staff, onLogout }) {
     }
   }
 
-  async function admitPatient() {
-    if (!selected || referralSubmission.current.hasPending() || referralLock.current || saving || unconfirmedSave || historyLoading || historyError || !allergyAvailable || allergyPending) return;
-    const { error } = await supabase.from("admissions").insert({
-      patient_id: selected.id,
-      admitted_by: staff.id,
-      reason: admitReason.trim(),
-    });
-    if (!error) {
-      setAdmitReason("");
-      loadHistory(selected.id);
-      loadAdmittedIds();
-    }
+  async function runCare(action,payload) {
+    if(careLock.current)return;
+    careLock.current=true;careDraft.current={action,payload};setCareBusy(true);setCareError("");
+    try {
+      await careSubmission.current.save(action,payload,staff.id);
+      if(!mounted.current)return;
+      careDraft.current=null;setCarePending(false);setAdmitReason("");
+      if(action==='discharge'&&payload.p_visit_id)setSelectedVisitId(null);
+      loadHistory(payload.p_patient_id);loadAdmittedIds();loadQueue();
+    } catch(error){
+      if(mounted.current){setCarePending(careSubmission.current.hasPending());setCareError(error.message);
+        if(action==='start'&&!careSubmission.current.hasPending()){setSelectedVisitId(null);setHistoryError("Visit could not be started. Refresh the queue and reselect the patient.");}}
+    } finally {careLock.current=false;if(mounted.current)setCareBusy(false);}
   }
-
-  async function dischargePatient() {
-    if (!admission || referralSubmission.current.hasPending() || referralLock.current || saving || unconfirmedSave || historyLoading || historyError || !allergyAvailable || allergyPending) return;
-    const { error } = await supabase
-      .from("admissions")
-      .update({ status: "Discharged", discharged_at: new Date().toISOString(), discharged_by: staff.id })
-      .eq("id", admission.id);
-    if (!error) {
-      loadHistory(selected.id);
-      loadAdmittedIds();
-
-      const inProgress = queue.find((v) => v.patient_id === selected.id && v.status === "In Consultation");
-      if (inProgress) {
-        await supabase.from("visits").update({ status: "Completed", completed_at: new Date().toISOString() }).eq("id", inProgress.id);
-        loadQueue();
-      }
-    }
+  function admitPatient() {
+    if(!selected||careLock.current||careSubmission.current.hasPending()||referralSubmission.current.hasPending()||referralLock.current||saving||unconfirmedSave||historyLoading||historyError||!allergyAvailable||allergyPending)return;
+    runCare('admit',{p_patient_id:selected.id,p_visit_id:selectedVisitId,p_reason:admitReason.trim()});
+  }
+  function dischargePatient() {
+    if(!selected||!admission||careLock.current||careSubmission.current.hasPending()||referralSubmission.current.hasPending()||referralLock.current||saving||unconfirmedSave||historyLoading||historyError||!allergyAvailable||allergyPending)return;
+    runCare('discharge',{p_patient_id:selected.id,p_admission_id:admission.id,p_visit_id:selectedVisitId});
   }
 
   async function submitReferral(e) {
     e.preventDefault();
     const retry = referralSubmission.current.hasPending();
-    if (!selected || referralLock.current || saving || unconfirmedSave || allergyLock.current
+    if (careLock.current || careSubmission.current.hasPending() || !selected || referralLock.current || saving || unconfirmedSave || allergyLock.current
       || (!retry && (historyLoading || historyError || !allergyAvailable))) return;
     let payload;
     try { payload = referralPayload(selected.id, selectedVisitId, referralForm); }
@@ -198,7 +201,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
   }
 
   async function printReferralLetter(referral) {
-    if (!selected || referralSubmission.current.hasPending() || referralLock.current || saving || unconfirmedSave || allergyLock.current) return;
+    if (careLock.current || careSubmission.current.hasPending() || !selected || referralSubmission.current.hasPending() || referralLock.current || saving || unconfirmedSave || allergyLock.current) return;
     const patient = selected;
     let win;
     referralLock.current = true; setReferralBusy(true); setReferralPrintError("");
@@ -223,7 +226,8 @@ export default function DoctorDashboard({ staff, onLogout }) {
   }
 
   function selectPatient(id) {
-    if (referralSubmission.current.hasPending() || referralLock.current || saveLock.current || submission.current.hasPending() || allergyLock.current) return false;
+    if(directoryError)return false;
+    if (careLock.current || careSubmission.current.hasPending() || referralSubmission.current.hasPending() || referralLock.current || saveLock.current || submission.current.hasPending() || allergyLock.current) return false;
     setAllergyAvailable(false);
     setAllergyPending(false);
     setSelectedVisitId(null);
@@ -247,17 +251,15 @@ export default function DoctorDashboard({ staff, onLogout }) {
     setReferralUnconfirmed(false);
     setReferralPrintError("");
     setShowPatientSummary(false);
+    setCareError("");
     loadHistory(id);
     return true;
   }
 
   async function selectFromQueue(visit) {
-    if (!selectPatient(visit.patient_id)) return;
+    if(queueError||!selectPatient(visit.patient_id))return;
     setSelectedVisitId(visit.id);
-    if (visit.status === "Waiting") {
-      await supabase.from("visits").update({ status: "In Consultation" }).eq("id", visit.id);
-      loadQueue();
-    }
+    if(visit.status==='Waiting')await runCare('start',{p_patient_id:visit.patient_id,p_visit_id:visit.id});
   }
 
   function updateRxRow(key, field, value) {
@@ -293,7 +295,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
   }
 
   async function saveFollowUpPrescription(consultationId) {
-    if (!selected || referralSubmission.current.hasPending() || referralLock.current || saving || unconfirmedSave || historyLoading || historyError || !allergyAvailable || allergyPending) return;
+    if (careLock.current || careSubmission.current.hasPending() || !selected || referralSubmission.current.hasPending() || referralLock.current || saving || unconfirmedSave || historyLoading || historyError || !allergyAvailable || allergyPending) return;
     const rows = followUpRx
       .filter((r) => r.drug.trim())
       .map((r) => ({ consultation_id: consultationId, drug: r.drug.trim(), dosage: r.dosage.trim(), instructions: r.instructions.trim() }));
@@ -313,7 +315,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
 
   async function saveConsultation(e) {
     e.preventDefault();
-    if (!selected || referralSubmission.current.hasPending() || referralLock.current || saveLock.current || historyLoading || historyError || !allergyAvailable || allergyLock.current) return;
+    if (careLock.current || careSubmission.current.hasPending() || !selected || referralSubmission.current.hasPending() || referralLock.current || saveLock.current || historyLoading || historyError || !allergyAvailable || allergyLock.current) return;
     if (!diagnosis.trim()) {
       setFormError("Add a diagnosis before saving.");
       return;
@@ -370,6 +372,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
       <Header staff={staff} onLogout={onLogout} />
       <div id="clinic-content" role="main" tabIndex={-1} className="wl-split-page" style={{ padding: 32, maxWidth: 1000, margin: "0 auto", display: "grid", gridTemplateColumns: "280px 1fr", gap: 20 }}>
         <div>
+          {queueError&&<p role="alert" className="wl-alert">{queueError} <button className="wl-btn" onClick={loadQueue}>Refresh queue</button></p>}
           {queue.length > 0 && (
             <div style={{ marginBottom: 18 }}>
               <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 15, margin: "0 0 10px", display: "flex", alignItems: "center", gap: 6 }}>
@@ -379,7 +382,8 @@ export default function DoctorDashboard({ staff, onLogout }) {
                 {queue.map((v, i) => (
                   <div
                     key={v.id}
-                    className="wl-row"
+                    className="wl-row" role="button" tabIndex={0} aria-disabled={!!queueError || careBusy || carePending}
+                    onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();selectFromQueue(v);}}}
                     onClick={() => selectFromQueue(v)}
                     style={{
                       padding: "10px 14px",
@@ -401,6 +405,8 @@ export default function DoctorDashboard({ staff, onLogout }) {
             </div>
           )}
 
+          {wardIndexError&&<p role="alert" className="wl-alert">{wardIndexError} <button className="wl-btn" onClick={loadAdmittedIds}>Refresh ward markers</button></p>}
+          {directoryError&&<p role="alert" className="wl-alert">{directoryError} <button className="wl-btn" onClick={loadDirectory}>Refresh patients</button></p>}
           <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 15, margin: "0 0 10px" }}>Patients</h3>
           <div style={{ position: "relative", marginBottom: 10 }}>
             <Search size={14} color="#7C8A90" style={{ position: "absolute", left: 10, top: 11 }} />
@@ -413,6 +419,8 @@ export default function DoctorDashboard({ staff, onLogout }) {
               filtered.map((p) => (
                 <div
                   key={p.id}
+                  role="button" tabIndex={0} aria-label={`Select patient ${p.name}`}
+                  onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();selectPatient(p.id);}}}
                   onClick={() => selectPatient(p.id)}
                   style={{
                     padding: "12px 14px",
@@ -452,16 +460,18 @@ export default function DoctorDashboard({ staff, onLogout }) {
                 </div>
               </div>
 
-              <button className="wl-btn" disabled={saving || unconfirmedSave || allergyPending || referralBusy || referralUnconfirmed} onClick={() => setShowPatientSummary(true)}>Open patient summary</button>
+              <button className="wl-btn" disabled={careBusy || carePending || saving || unconfirmedSave || allergyPending || referralBusy || referralUnconfirmed} onClick={() => setShowPatientSummary(true)}>Open patient summary</button>
               {showPatientSummary && <PatientRecord patient={selected} staff={staff} onClose={() => setShowPatientSummary(false)} />}
 
-              <AllergyPanel patientId={selected.id} staff={staff} disabled={saving || unconfirmedSave || referralBusy || referralUnconfirmed}
+              {(careBusy||carePending||careError)&&<div className="wl-alert">{careBusy&&<p role="status">Saving care action…</p>}{careError&&<p role="alert">{careError}</p>}{carePending&&<button className="wl-btn" disabled={careBusy} onClick={()=>runCare(careDraft.current.action,careDraft.current.payload)}>Retry care action</button>}</div>}
+              <AllergyPanel patientId={selected.id} staff={staff} disabled={careBusy || carePending || saving || unconfirmedSave || referralBusy || referralUnconfirmed}
                 onAvailabilityChange={setAllergyAvailable} onPendingChange={pending => {allergyLock.current=pending;setAllergyPending(pending);}} />
 
               <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 18, marginBottom: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                   <BedDouble size={15} color="#A13D3D" />
                   <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 14, margin: 0 }}>Ward status</h3>
+                  <button className="wl-btn" disabled={careBusy||carePending||historyLoading} onClick={()=>loadHistory(selected.id)}>Refresh ward status</button>
                 </div>
                 {historyLoading || historyError ? <p>Ward status unavailable while patient history is loading or cannot be verified.</p> : admission ? (
                   <div>
@@ -469,14 +479,14 @@ export default function DoctorDashboard({ staff, onLogout }) {
                       Admitted since <strong>{admission.admitted_at?.slice(0, 10)}</strong>
                       {admission.reason && <> — {admission.reason}</>}
                     </p>
-                    <button className="wl-btn" onClick={dischargePatient} style={{ background: "#2F7D4F", color: "#fff" }}>
+                    <button className="wl-btn" onClick={dischargePatient} disabled={careBusy || carePending || saving || unconfirmedSave || referralBusy || referralUnconfirmed} style={{ background: "#2F7D4F", color: "#fff" }}>
                       Discharge patient
                     </button>
                   </div>
                 ) : (
                   <div style={{ display: "flex", gap: 8 }}>
-                    <input className="wl-input" value={admitReason} onChange={(e) => setAdmitReason(e.target.value)} placeholder="Reason for admission (optional)" />
-                    <button className="wl-btn" onClick={admitPatient} style={{ background: "#A13D3D", color: "#fff", whiteSpace: "nowrap" }}>
+                    <input className="wl-input" value={admitReason} disabled={careBusy || carePending} onChange={(e) => setAdmitReason(e.target.value)} placeholder="Reason for admission (optional)" />
+                    <button className="wl-btn" onClick={admitPatient} disabled={careBusy || carePending || saving || unconfirmedSave || referralBusy || referralUnconfirmed} style={{ background: "#A13D3D", color: "#fff", whiteSpace: "nowrap" }}>
                       Admit to ward
                     </button>
                   </div>
@@ -490,17 +500,17 @@ export default function DoctorDashboard({ staff, onLogout }) {
                     <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 14, margin: 0 }}>Referrals</h3>
                   </div>
                   {!showReferralForm && (
-                    <button className="wl-btn" disabled={referralBusy || referralUnconfirmed || saving || unconfirmedSave || historyLoading || !!historyError || !allergyAvailable || allergyPending} onClick={() => setShowReferralForm(true)} style={{ background: "#7C5CBF", color: "#fff", fontSize: 12, padding: "6px 10px" }}>
+                    <button className="wl-btn" disabled={careBusy || carePending || referralBusy || referralUnconfirmed || saving || unconfirmedSave || historyLoading || !!historyError || !allergyAvailable || allergyPending} onClick={() => setShowReferralForm(true)} style={{ background: "#7C5CBF", color: "#fff", fontSize: 12, padding: "6px 10px" }}>
                       Refer to another facility
                     </button>
                   )}
                 </div>
 
-                {savedReferral && <p role="status">Referral saved as {savedReferral.code}. <button className="wl-btn" disabled={referralBusy || referralUnconfirmed || saving || unconfirmedSave || allergyPending} onClick={() => printReferralLetter(savedReferral)}>Print saved referral</button></p>}
+                {savedReferral && <p role="status">Referral saved as {savedReferral.code}. <button className="wl-btn" disabled={careBusy || carePending || referralBusy || referralUnconfirmed || saving || unconfirmedSave || allergyPending} onClick={() => printReferralLetter(savedReferral)}>Print saved referral</button></p>}
                 {referralPrintError && <p role="alert" className="wl-alert">{referralPrintError}</p>}
                 {showReferralForm && (
                   <form onSubmit={submitReferral} className="wl-fade-in" style={{ marginBottom: 12 }}>
-                    <fieldset disabled={referralBusy || referralUnconfirmed || saving || unconfirmedSave || allergyPending} style={{border:0,padding:0,margin:0,minWidth:0}}>
+                    <fieldset disabled={careBusy || carePending || referralBusy || referralUnconfirmed || saving || unconfirmedSave || allergyPending} style={{border:0,padding:0,margin:0,minWidth:0}}>
                     <p>{selectedVisitId ? "Saving this referral will complete the selected queue visit." : "No queue visit linked. Select the patient from today’s queue to complete that visit with the referral."}</p>
                     <div className="wl-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                       <input aria-label="Receiving facility" className="wl-input" value={referralForm.facility_name} onChange={(e) => setReferralForm({ ...referralForm, facility_name: e.target.value })} placeholder="Facility name" />
@@ -525,7 +535,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
                       )}
                     </div>
                     </fieldset>
-                    {referralUnconfirmed && <button type="button" className="wl-btn" disabled={referralBusy} onClick={submitReferral}>Retry referral save</button>}
+                    {referralUnconfirmed && <button type="button" className="wl-btn" disabled={careBusy || carePending || referralBusy} onClick={submitReferral}>Retry referral save</button>}
                   </form>
                 )}
 
@@ -542,7 +552,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
                           <strong style={{ color: "#1E2A30" }}>{r.facility_name}</strong> — {r.reason}
                         </span>
                         <span style={{ color: "#7C8A90" }}>{r.created_at?.slice(0, 10)}</span>
-                        {r.direction === "Outgoing" && <button className="wl-btn" aria-label={`Print referral ${r.code}`} disabled={referralBusy || referralUnconfirmed || saving || unconfirmedSave || allergyPending} onClick={() => printReferralLetter(r)}><Printer size={14} /> Print letter</button>}
+                        {r.direction === "Outgoing" && <button className="wl-btn" aria-label={`Print referral ${r.code}`} disabled={careBusy || carePending || referralBusy || referralUnconfirmed || saving || unconfirmedSave || allergyPending} onClick={() => printReferralLetter(r)}><Printer size={14} /> Print letter</button>}
                       </div>
                     ))}
                   </div>
@@ -602,7 +612,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
               <div style={{ background: "#fff", border: "1px solid #DCE3E6", borderRadius: 12, padding: 20, marginBottom: 16 }}>
                 <h3 style={{ fontFamily: "Space Grotesk, sans-serif", fontWeight: 600, fontSize: 15, margin: "0 0 14px" }}>New consultation</h3>
                 <form onSubmit={saveConsultation}>
-                  <fieldset disabled={referralBusy || referralUnconfirmed || saving || unconfirmedSave || historyLoading || !!historyError || !allergyAvailable || allergyPending} style={{ border: 0, margin: 0, padding: 0 }}>
+                  <fieldset disabled={careBusy || carePending || referralBusy || referralUnconfirmed || saving || unconfirmedSave || historyLoading || !!historyError || !allergyAvailable || allergyPending} style={{ border: 0, margin: 0, padding: 0 }}>
                   <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>Diagnosis</label>
                   <input className="wl-input" value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} placeholder="e.g. Acute malaria" style={{ marginBottom: 12 }} />
 
@@ -631,7 +641,7 @@ export default function DoctorDashboard({ staff, onLogout }) {
                   {historyLoading && <p role="status">Loading patient history…</p>}
                   {historyError && <p role="alert">{historyError} <button type="button" onClick={() => loadHistory(selected.id)}>Retry history</button></p>}
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <button className="wl-btn" type="submit" disabled={referralBusy || referralUnconfirmed || saving || historyLoading || !!historyError || !allergyAvailable || allergyPending} style={{ background: "#2B6777", color: "#fff" }}>{saving ? "Saving…" : unconfirmedSave ? "Retry consultation save" : "Save consultation"}</button>
+                    <button className="wl-btn" type="submit" disabled={careBusy || carePending || referralBusy || referralUnconfirmed || saving || historyLoading || !!historyError || !allergyAvailable || allergyPending} style={{ background: "#2B6777", color: "#fff" }}>{saving ? "Saving…" : unconfirmedSave ? "Retry consultation save" : "Save consultation"}</button>
                     {formError && (
                       <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#A13D3D", fontSize: 13 }}>
                         <AlertCircle size={14} /> {formError}

@@ -1,0 +1,16 @@
+import React from 'react';
+import {beforeEach,afterEach,describe,it,expect,vi} from 'vitest';
+import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import ReportsPanel from './ReportsPanel';
+import {supabase} from '../supabaseClient';
+import {parseOperationsReport} from '../reporting/operationsReport';
+vi.mock('../supabaseClient',()=>({supabase:{rpc:vi.fn()}}));
+const report={schema_version:1,read_at:'2026-10-22T12:00:00Z',period_start:'2026-10-15T12:00:00Z',totalPatients:0,newPatients:0,admittedNow:0,consultsThisWeek:0,totalRevenue:'0',revenueThisWeek:'0',outstanding:'0',outstandingCount:0,paidWithoutTimestamp:0};
+beforeEach(()=>{supabase.rpc.mockReset();supabase.rpc.mockResolvedValue({data:report});});afterEach(cleanup);
+describe('operations report availability',()=>{
+  it('shows verified zero totals and prints an escaped, isolated training document',async()=>{const win={closed:false,opener:{},document:{open:vi.fn(),write:vi.fn(),close:vi.fn()},focus:vi.fn(),print:vi.fn(),close:vi.fn()};vi.spyOn(window,'open').mockReturnValue(win);render(<ReportsPanel/>);await waitFor(()=>expect(screen.getByRole('button',{name:'Print report'}).disabled).toBe(false));fireEvent.click(screen.getByRole('button',{name:'Print report'}));expect(win.print).toHaveBeenCalledOnce();expect(win.opener).toBeNull();const html=win.document.write.mock.calls.at(-1)[0];expect(html).toContain('TEST DATA');expect(html).toContain("default-src 'none'");expect(html).toContain('payment timestamp');});
+  it('does not turn errors into zero metrics and supports retry',async()=>{supabase.rpc.mockResolvedValueOnce({error:{message:'Offline'}});render(<ReportsPanel/>);expect(await screen.findByRole('alert')).toBeTruthy();expect(screen.queryByRole('heading',{name:'Total patients'})).toBeNull();expect(screen.getByRole('button',{name:'Print report'}).disabled).toBe(true);fireEvent.click(screen.getByRole('button',{name:'Retry report'}));expect(await screen.findByRole('heading',{name:'Total patients'})).toBeTruthy();});
+  it('retains a previous snapshot but disables printing after failed refresh',async()=>{render(<ReportsPanel/>);await screen.findByRole('heading',{name:'Total patients'});supabase.rpc.mockRejectedValueOnce(new Error('Lost'));fireEvent.click(screen.getByRole('button',{name:'Refresh report'}));expect(await screen.findByRole('alert')).toBeTruthy();expect(screen.getByRole('heading',{name:'Total patients'})).toBeTruthy();expect(screen.getByRole('button',{name:'Print report'}).disabled).toBe(true);});
+  it('shows missing payment dates and handles blocked popups visibly',async()=>{supabase.rpc.mockResolvedValue({data:{...report,paidWithoutTimestamp:2}});vi.spyOn(window,'open').mockReturnValue(null);render(<ReportsPanel/>);expect(await screen.findByText(/2 paid invoice/)).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Print report'}));expect(await screen.findByText(/Allow popups/)).toBeTruthy();});
+  it.each([{schema_version:2},{read_at:'bad'},{period_start:'2030-01-01'},{totalPatients:-1},{totalPatients:1.2},{totalRevenue:'NaN'},{outstanding:'-1'},{totalRevenue:'9007199254740993'},{revenueThisWeek:2}])('rejects malformed reports %#',patch=>{expect(()=>parseOperationsReport({...report,...patch})).toThrow();});
+});

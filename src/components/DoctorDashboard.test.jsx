@@ -196,3 +196,14 @@ describe('atomic referral retry UI',()=>{
     await screen.findByRole('button',{name:'Print saved referral'});expect(supabase.rpc.mock.calls[0][0]).toBe('save_outgoing_referral');expect(supabase.rpc.mock.calls[0][1]).toEqual({p_patient_id:'patient-a',p_visit_id:'visit-a',p_request_id:expect.any(String),p_facility_name:'Synthetic Facility',p_referring_doctor:'',p_reason:'Synthetic reason',p_urgency:'Routine',p_notes:''});
   });
 });
+
+describe('ward action recovery',()=>{
+  const admissionId='00000000-0000-4000-8000-000000000011';
+  it('retains an uncertain admission and retries exactly without allowing patient changes',async()=>{
+    supabase.rpc.mockRejectedValueOnce(new Error('Lost care response')).mockImplementationOnce(async(name,p)=>({data:{id:admissionId,patient_id:p.p_patient_id,visit_id:p.p_visit_id,request_id:p.p_request_id,reason:p.p_reason,status:'Admitted',admitted_by:'doctor',admitted_at:'2026-10-22T12:00:00Z'}}));
+    await selectAlice();fireEvent.change(screen.getByPlaceholderText('Reason for admission (optional)'),{target:{value:'Synthetic reason'}});fireEvent.click(screen.getByRole('button',{name:'Admit to ward'}));
+    const retry=await screen.findByRole('button',{name:'Retry care action'});expect(screen.getByRole('button',{name:'Save consultation'}).disabled).toBe(true);fireEvent.click(screen.getByText('Synthetic Bob'));expect(screen.getAllByText('Synthetic Alice')).toHaveLength(2);fireEvent.click(retry);
+    await waitFor(()=>expect(screen.queryByRole('button',{name:'Retry care action'})).toBeNull());expect(supabase.rpc.mock.calls[0]).toEqual(supabase.rpc.mock.calls[1]);expect(supabase.rpc.mock.calls[0][0]).toBe('admit_clinic_patient');expect(supabase.rpc.mock.calls[0][1].p_visit_id).toBeNull();
+  });
+  it('keeps an editable ward reason after rejection',async()=>{supabase.rpc.mockResolvedValue({error:{code:'22023',message:'Admission rejected'}});await selectAlice();fireEvent.change(screen.getByPlaceholderText('Reason for admission (optional)'),{target:{value:'Keep reason'}});fireEvent.click(screen.getByRole('button',{name:'Admit to ward'}));expect(await screen.findByText('Admission rejected')).toBeTruthy();expect(screen.getByPlaceholderText('Reason for admission (optional)').value).toBe('Keep reason');expect(screen.getByRole('button',{name:'Admit to ward'}).disabled).toBe(false);});
+});

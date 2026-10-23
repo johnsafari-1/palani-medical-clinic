@@ -47,7 +47,7 @@ describe("role-protected app routes", () => {
     render(tree(signedOut, path));
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/login"));
     expect(screen.queryByText(/dashboard data/)).toBeNull();
-    expect(screen.getByRole("button", { name: "Sign in" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Sign In" })).toBeTruthy();
   });
 
   it.each(Object.entries(ROLE_PATHS))("routes %s from /app to its assigned dashboard", async (role, path) => {
@@ -96,24 +96,76 @@ describe("staff password login", () => {
   function fillAndSubmit() {
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: " doctor1 " } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: " secret pass " } });
-    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
   }
+
+  it("retains all seven departments, username focus, and the test-data notice", () => {
+    render(tree(signedOut, "/login"));
+    for (const name of ["Administrator", "Doctor", "Nurse", "Lab Technician", "Receptionist", "Pharmacist", "Cashier"]) {
+      expect(screen.getByRole("button", { name }).getAttribute("aria-pressed")).toBe("false");
+    }
+    const cashier = screen.getByRole("button", { name: "Cashier" });
+    fireEvent.click(cashier);
+    expect(cashier.getAttribute("aria-pressed")).toBe("true");
+    expect(document.activeElement).toBe(screen.getByLabelText("Username"));
+    expect(screen.getByRole("note").textContent).toContain("Test data only");
+    expect(screen.getByRole("note").textContent).toContain("Do not enter real patient information.");
+    expect(supabase.auth.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it("announces pending sign-in, disables credential edits, and prevents duplicate submission", async () => {
+    let completeSignIn;
+    supabase.auth.signInWithPassword.mockReturnValueOnce(new Promise((resolve) => { completeSignIn = resolve; }));
+    render(tree(signedOut, "/login"));
+    fillAndSubmit();
+    const form = screen.getByLabelText("Username").closest("form");
+    expect(form.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByRole("status").textContent).toContain("Signing in. Please wait.");
+    expect(screen.getByRole("button", { name: "Signing in…" }).disabled).toBe(true);
+    expect(screen.getByLabelText("Username").disabled).toBe(true);
+    expect(screen.getByLabelText("Password").disabled).toBe(true);
+    fireEvent.submit(form);
+    expect(supabase.auth.signInWithPassword).toHaveBeenCalledTimes(1);
+    completeSignIn({ error: null });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Sign In" }).disabled).toBe(false));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("rejects whitespace-only usernames before calling Supabase", () => {
+    render(tree(signedOut, "/login"));
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "   " } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "test-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+    expect(screen.getByRole("alert").textContent).toContain("Enter your username and password.");
+    expect(supabase.auth.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it("retains the service-error message and clears it on a successful retry", async () => {
+    supabase.auth.signInWithPassword.mockResolvedValueOnce({ error: { code: "unexpected_failure" } });
+    render(tree(signedOut, "/login"));
+    fillAndSubmit();
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("contact your Administrator"));
+    supabase.auth.signInWithPassword.mockResolvedValueOnce({ error: null });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Sign In" }).disabled).toBe(false));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 
   it("does not let the role card choose the account's authorization", async () => {
     supabase.auth.signInWithPassword.mockResolvedValueOnce({ error: { code: "invalid_credentials" } });
     render(tree(signedOut, "/login"));
-    fireEvent.click(screen.getByTitle("Fill the form for a Administrator login"));
+    fireEvent.click(screen.getByRole("button", { name: "Administrator" }));
     fillAndSubmit();
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("incorrect"));
     expect(supabase.auth.signInWithPassword).toHaveBeenCalledWith({ email: "doctor1@palani.local", password: " secret pass " });
-    expect(screen.getByRole("button", { name: "Sign in" }).disabled).toBe(false);
+    expect(screen.getByRole("button", { name: "Sign In" }).disabled).toBe(false);
   });
 
   it("recovers its submit button after a network exception", async () => {
     supabase.auth.signInWithPassword.mockRejectedValueOnce(new Error("offline"));
     render(tree(signedOut, "/login")); fillAndSubmit();
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("connection"));
-    expect(screen.getByRole("button", { name: "Sign in" }).disabled).toBe(false);
+    expect(screen.getByRole("button", { name: "Sign In" }).disabled).toBe(false);
   });
   it("shows and hides the password without changing the submitted credential", async () => {
     supabase.auth.signInWithPassword.mockResolvedValueOnce({ error: { code: "invalid_credentials" } });

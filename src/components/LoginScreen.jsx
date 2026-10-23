@@ -59,7 +59,7 @@ export default function LoginScreen() {
 
         <div className="staff-login__network-content">
           <p className="staff-login__eyebrow">Connected Care Network</p>
-          <h1 id="network-heading">One team.<br /> Connected care.</h1>
+          <h1 id="network-heading">One team.<br /><span> Connected care.</span></h1>
           <p className="staff-login__intro">Every department, working together.<br /> Better care starts with you.</p>
           <div className="staff-login__directory-heading">
             <span id="department-heading">Your department</span><span>7 connected teams</span>
